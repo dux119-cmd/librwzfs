@@ -19,8 +19,8 @@ class CwdTest : public ::testing::Test {
     original_ = fs::current_path();
     mounts::clear();
     rfs::cwd::clear();
-    ASSERT_TRUE(mounts::add("/rwzfs-test-mount"));
-    ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwzfs-test-mount/sub"));
+    ASSERT_TRUE(mounts::add("/rwz"));
+    ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwz/sub"));
   }
   void TearDown() override {
     rfs::cwd::clear();
@@ -46,12 +46,12 @@ TEST(CwdResolve, RelativeUnchangedWithoutArchiveCwd) {
 }
 
 TEST_F(CwdTest, RelativeResolvesAgainstArchiveCwd) {
-  EXPECT_EQ(rfs::resolve("x"), fs::path("/rwzfs-test-mount/sub/x"));
+  EXPECT_EQ(rfs::resolve("x"), fs::path("/rwz/sub/x"));
 }
 
 TEST_F(CwdTest, DotAndDotDotNormalizeLexically) {
-  EXPECT_EQ(rfs::resolve("./a/../b"), fs::path("/rwzfs-test-mount/sub/b"));
-  EXPECT_EQ(rfs::resolve("."), fs::path("/rwzfs-test-mount/sub"));
+  EXPECT_EQ(rfs::resolve("./a/../b"), fs::path("/rwz/sub/b"));
+  EXPECT_EQ(rfs::resolve("."), fs::path("/rwz/sub"));
 }
 
 TEST_F(CwdTest, DotDotCanLeaveArchiveToHostPath) {
@@ -67,7 +67,8 @@ TEST_F(CwdTest, AbsoluteIgnoresArchiveCwd) {
 TEST(CwdState, SetRejectsPathOutsideMount) {
   mounts::clear();
   rfs::cwd::clear();
-  ASSERT_TRUE(mounts::add("/rwzfs-test-mount"));
+  ASSERT_TRUE(mounts::add("/rwz"));
+  rfs::cwd::clear();
   EXPECT_FALSE(rfs::cwd::set_archive_cwd("/elsewhere"));
   EXPECT_FALSE(rfs::cwd::archive_cwd().has_value());
   mounts::clear();
@@ -76,7 +77,8 @@ TEST(CwdState, SetRejectsPathOutsideMount) {
 TEST(CwdState, SetRejectsRelativePath) {
   mounts::clear();
   rfs::cwd::clear();
-  ASSERT_TRUE(mounts::add("/rwzfs-test-mount"));
+  ASSERT_TRUE(mounts::add("/rwz"));
+  rfs::cwd::clear();
   EXPECT_FALSE(rfs::cwd::set_archive_cwd("sub"));
   EXPECT_FALSE(rfs::cwd::archive_cwd().has_value());
   mounts::clear();
@@ -84,15 +86,15 @@ TEST(CwdState, SetRejectsRelativePath) {
 
 TEST_F(CwdTest, CurrentPathReturnsArchiveCwd) {
   std::error_code ec;
-  EXPECT_EQ(rfs::current_path(ec), fs::path("/rwzfs-test-mount/sub"));
+  EXPECT_EQ(rfs::current_path(ec), fs::path("/rwz/sub"));
   EXPECT_FALSE(ec);
 }
 
 TEST_F(CwdTest, ArchiveTargetIsRejectedAndCwdUnchanged) {
   std::error_code ec;
-  rfs::current_path(fs::path("/rwzfs-test-mount/other"), ec);
+  rfs::current_path(fs::path("/rwz/other"), ec);
   EXPECT_EQ(ec, std::errc::not_supported);
-  EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path("/rwzfs-test-mount/sub"));
+  EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path("/rwz/sub"));
 }
 
 TEST_F(CwdTest, HostTargetClearsArchiveCwd) {
@@ -114,6 +116,12 @@ TEST_F(CwdTest, RelativeHostChdirWorksAfterClear) {
 
 TEST_F(CwdTest, AbsoluteIsLexicalUnderArchiveCwd) {
   std::error_code ec;
-  EXPECT_EQ(rfs::absolute(fs::path("x/../y"), ec), fs::path("/rwzfs-test-mount/sub/y"));
+  EXPECT_EQ(rfs::absolute(fs::path("x/../y"), ec), fs::path("/rwz/sub/y"));
   EXPECT_FALSE(ec);
+}
+
+TEST_F(CwdTest, ArchiveRootIsReachableByPrefix) {
+  EXPECT_TRUE(rfs::cwd::set_archive_cwd("/rwz"));
+  EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path("/rwz"));
+  EXPECT_EQ(rfs::resolve("x"), fs::path("/rwz/x"));
 }

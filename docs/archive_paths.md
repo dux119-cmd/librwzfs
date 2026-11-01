@@ -39,3 +39,16 @@ PATH-01 to PATH-14 are pure and unaffected by the archive. Any caller that needs
 - Backslash input on Windows is treated as a separator and normalized.
 - Names with spaces, Unicode, and leading dots (`.hidden`) are preserved.
 - A path built with the path wrappers and then normalized resolves to the same entry as the hand-written form.
+
+## Magic archive root
+Archive paths use one fixed absolute prefix: `/rwz` on POSIX, `C:/RWZ` on Windows.
+- `archive_root()` returns the prefix.
+- `to_archive_absolute("DIR/FILE")` gives `/rwz/DIR/FILE`. `""` gives `/rwz`.
+- `to_archive_relative("/rwz/DIR/FILE")` gives `DIR/FILE`. Anything outside the prefix, such as `/rwzx/y`, gives nothing.
+- Mountpoints must be at or under the prefix. A mountpoint is virtual, so the host filesystem is not checked for it.
+- While an archive is mounted, host paths under the prefix route to the archive.
+- Relative paths under an archive working directory expand to `/rwz/...` before any wrapper sees them, so an absolute archive path can always be told apart from a host path.
+
+## Path resolution vs. normalization
+- `normalize_archive_path` (PATH-15) normalizes archive-relative text and rejects relative escapes. Use it for archive-relative text only.
+- `walk_lexically` resolves paths for the wrappers. Inside the archive, `..` is lexical. Once a path leaves the archive, the rest is host-owned and host symlinks are followed.

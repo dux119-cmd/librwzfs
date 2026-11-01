@@ -2,6 +2,8 @@
 
 #include <vector>
 
+#include <optional>
+
 namespace rwzfs::fs {
 
 namespace {
@@ -71,6 +73,12 @@ std::string join_components(const std::vector<std::string_view>& parts) {
   return result;
 }
 
+#if defined(_WIN32)
+constexpr std::string_view kRootText = "C:/RWZ";
+#else
+constexpr std::string_view kRootText = "/rwz";
+#endif
+
 }  // namespace
 
 std::expected<std::string, archive_path_error> normalize_archive_path(std::string_view text) {
@@ -79,6 +87,31 @@ std::expected<std::string, archive_path_error> normalize_archive_path(std::strin
     return std::unexpected(parts.error());
   }
   return join_components(*parts);
+}
+
+std::filesystem::path archive_root() { return std::filesystem::path(kRootText); }
+
+std::expected<std::filesystem::path, archive_path_error> to_archive_absolute(
+    std::string_view text) {
+  auto relative = normalize_archive_path(text);
+  if (!relative) {
+    return std::unexpected(relative.error());
+  }
+  if (relative->empty()) {
+    return archive_root();
+  }
+  return archive_root() / *relative;
+}
+
+std::optional<std::string> to_archive_relative(const std::filesystem::path& absolute) {
+  const auto relative = absolute.lexically_normal().lexically_relative(archive_root());
+  if (relative.empty() || *relative.begin() == std::filesystem::path("..")) {
+    return std::nullopt;
+  }
+  if (relative == std::filesystem::path(".")) {
+    return std::string{};
+  }
+  return relative.generic_string();
 }
 
 }  // namespace rwzfs::fs

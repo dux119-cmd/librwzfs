@@ -2,7 +2,9 @@
 
 #include <mutex>
 
+#include "rwzfs/archive/backend.hpp"
 #include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/walk.hpp"
 
 namespace rwzfs::fs {
 
@@ -24,24 +26,33 @@ std::optional<path>& cwd_slot() {
 
 path resolve(const path& p) {
   if (p.is_absolute()) {
-    return p;
+    return walk_lexically(p);
   }
   const auto base = cwd::archive_cwd();
   if (!base) {
     return p;
   }
-  auto joined = (*base / p).lexically_normal();
-  // lexically_normal() keeps a trailing separator for "dir/."; drop it, as the archive spec requires.
-  if (!joined.has_filename() && joined.has_parent_path()) {
-    joined = joined.parent_path();
-  }
-  return joined;
+  return walk_lexically(*base / p);
 }
 
 void change_directory(const path& p, std::error_code& ec) {
   const auto target = resolve(p);
-  if (mounts::is_archive_path(target)) {
-    ec = std::make_error_code(std::errc::not_supported);
+  if (const auto r = mounts::find(target)) {
+    if (!r->backend) {
+      ec = std::make_error_code(std::errc::not_supported);
+      return;
+    }
+    const auto e = r->backend->lookup(r->rel);
+    if (!e) {
+      ec = std::make_error_code(std::errc::no_such_file_or_directory);
+      return;
+    }
+    if (e->type != rwzfs::archive::kind::directory) {
+      ec = std::make_error_code(std::errc::not_a_directory);
+      return;
+    }
+    ec.clear();
+    [[maybe_unused]] const bool entered = cwd::set_archive_cwd(target);
     return;
   }
   stdfs::current_path(target, ec);

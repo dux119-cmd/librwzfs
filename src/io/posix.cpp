@@ -2,52 +2,129 @@
 
 #if !defined(_WIN32)
 
+#include <dirent.h>
+#include <fcntl.h>
+#include <glob.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #include <cerrno>
 #include <cstring>
+#include <string>
 #include <system_error>
 
 #include "rwzfs/fs/cwd.hpp"
 #include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/io/archive_io.hpp"
 
 namespace rwzfs::io::posix {
 
 namespace fs = rwzfs::fs;
+namespace aio = rwzfs::io::archive_io;
 
-namespace {
+// Every path wrapper resolves its argument (CWD-05) first. Archive paths go to archive_io,
+// everything else passes through to the host call.
 
-// Archive file access is not implemented yet. Opening an archive path fails with ENOTSUP
-// rather than reaching the host.
-bool rejects_archive(const fs::path& p) {
-  if (fs::mounts::is_archive_path(p)) {
-    errno = ENOTSUP;
-    return true;
-  }
-  return false;
+int close(int fd) { return aio::is_fd(fd) ? aio::close(fd) : ::close(fd); }
+
+ssize_t read(int fd, void* buf, std::size_t count) {
+  return aio::is_fd(fd) ? aio::read(fd, buf, count) : ::read(fd, buf, count);
 }
 
-}  // namespace
-
-// Descriptors are host-only until archive files can be opened, so these pass through.
-
-int close(int fd) { return ::close(fd); }
-
-ssize_t read(int fd, void* buf, std::size_t count) { return ::read(fd, buf, count); }
-
-ssize_t write(int fd, const void* buf, std::size_t count) { return ::write(fd, buf, count); }
-
-int open(const char* path, int flags, mode_t mode) {
-  const auto resolved = fs::resolve(fs::path(path));
-  if (rejects_archive(resolved)) {
+ssize_t write(int fd, const void* buf, std::size_t count) {
+  if (aio::is_fd(fd)) {
+    errno = EBADF;  // archive descriptors are read-only
     return -1;
   }
-  return ::open(resolved.c_str(), flags, mode);
+  return ::write(fd, buf, count);
 }
 
-off_t lseek(int fd, off_t offset, int whence) { return ::lseek(fd, offset, whence); }
+int open(const char* path, int flags, mode_t mode) {
+  const auto p = fs::resolve(fs::path(path));
+  if (const auto r = fs::mounts::find(p)) return aio::open(*r, flags);
+  return ::open(p.c_str(), flags, mode);
+}
 
-int fsync(int fd) { return ::fsync(fd); }
+int stat(const char* path, struct stat* buf) {
+  const auto p = fs::resolve(fs::path(path));
+  if (const auto r = fs::mounts::find(p)) return aio::stat(*r, buf);
+  return ::stat(p.c_str(), buf);
+}
 
-// CWD-04
+int ioctl(int fd, unsigned long request, void* arg) {
+  if (aio::is_fd(fd)) {
+    errno = ENOTTY;
+    return -1;
+  }
+  return ::ioctl(fd, request, arg);
+}
+
+off_t lseek(int fd, off_t offset, int whence) {
+  return aio::is_fd(fd) ? aio::seek(fd, offset, whence) : ::lseek(fd, offset, whence);
+}
+
+int unlink(const char* path) {
+  const auto p = fs::resolve(fs::path(path));
+  if (const auto r = fs::mounts::find(p)) return aio::reject_write(*r);
+  return ::unlink(p.c_str());
+}
+
+void* mmap(void* addr, std::size_t length, int prot, int flags, int fd, off_t offset) {
+  if (aio::is_fd(fd)) {
+    errno = ENODEV;
+    return MAP_FAILED;
+  }
+  return ::mmap(addr, length, prot, flags, fd, offset);
+}
+
+char* realpath(const char* path, char* resolved) {
+  const auto p = fs::resolve(fs::path(path));
+  if (const auto r = fs::mounts::find(p)) return aio::realpath(*r, resolved);
+  return ::realpath(p.c_str(), resolved);
+}
+
+DIR* opendir(const char* path) {
+  const auto p = fs::resolve(fs::path(path));
+  if (const auto r = fs::mounts::find(p)) return aio::opendir(*r);
+  return ::opendir(p.c_str());
+}
+
+struct dirent* readdir(DIR* dir) {
+  return aio::is_dir(dir) ? aio::readdir(dir) : ::readdir(dir);
+}
+
+int closedir(DIR* dir) { return aio::is_dir(dir) ? aio::closedir(dir) : ::closedir(dir); }
+
+int mkdir(const char* path, mode_t mode) {
+  const auto p = fs::resolve(fs::path(path));
+  if (const auto r = fs::mounts::find(p)) return aio::reject_write(*r);
+  return ::mkdir(p.c_str(), mode);
+}
+
+int rmdir(const char* path) {
+  const auto p = fs::resolve(fs::path(path));
+  if (const auto r = fs::mounts::find(p)) return aio::reject_write(*r);
+  return ::rmdir(p.c_str());
+}
+
+int truncate(const char* path, off_t length) {
+  const auto p = fs::resolve(fs::path(path));
+  if (const auto r = fs::mounts::find(p)) return aio::reject_write(*r);
+  return ::truncate(p.c_str(), length);
+}
+
+int access(const char* path, int mode) {
+  const auto p = fs::resolve(fs::path(path));
+  if (const auto r = fs::mounts::find(p)) return aio::access(*r, mode);
+  return ::access(p.c_str(), mode);
+}
+
+int fsync(int fd) { return aio::is_fd(fd) ? aio::fsync(fd) : ::fsync(fd); }
+
+// POSIX-19 / CWD-04
 char* getcwd(char* buf, std::size_t size) {
   const auto archive = fs::cwd::archive_cwd();
   if (!archive) {
@@ -75,6 +152,16 @@ int chdir(const char* path) {
     return -1;
   }
   return 0;
+}
+
+// Archive globbing is not implemented, so archive patterns abort with ENOTSUP.
+int glob(const char* pattern, int flags, int (*errfunc)(const char*, int), glob_t* out) {
+  const auto p = fs::resolve(fs::path(pattern));
+  if (fs::mounts::is_archive_path(p)) {
+    errno = ENOTSUP;
+    return GLOB_ABORTED;
+  }
+  return ::glob(p.c_str(), flags, errfunc, out);
 }
 
 }  // namespace rwzfs::io::posix

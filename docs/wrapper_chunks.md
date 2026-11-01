@@ -26,7 +26,7 @@ Each wrapper has an ID and call count from the call list. Status: `declared` = h
 | PATH-15 | normalize_archive_path (new, see docs/archive_paths.md) | n/a | implemented, tested |
 
 ## Filesystem (FS) — include/rwzfs/fs/filesystem.hpp
-Routing: a path at or under a registered mountpoint (lexical check, see `include/rwzfs/fs/mount_table.hpp`) is an archive path. Until archive lookups exist, archive paths return `std::errc::not_supported`. All other paths, including relative paths, pass through to `std::filesystem`.
+Archive reads: see docs/archive_access.md. Archive paths live under the magic root `/rwz` (see docs/archive_paths.md). Routing: a path at or under a registered mountpoint (lexical check, see `include/rwzfs/fs/mount_table.hpp`) is an archive path. Until archive lookups exist, archive paths return `std::errc::not_supported`. All other paths, including relative paths, pass through to `std::filesystem`.
 
 | ID | Call | Calls | Status |
 |---|---|---|---|
@@ -58,14 +58,15 @@ Routing: a path at or under a registered mountpoint (lexical check, see `include
 ## C stdio (STDIO) — include/rwzfs/io/stdio.hpp
 | ID | Call | Calls | Status |
 |---|---|---|---|
-| STDIO-01 | fread | 295 | declared |
-| STDIO-02 | fopen | 68 | declared |
-| STDIO-03 | ftell | 80 | declared |
-| STDIO-04 | fflush | 12 | declared |
-| STDIO-05 | remove (C) | 21 | declared |
-| STDIO-06 | rename (C) | 1 | declared |
-| STDIO-07 | ifstream | 2 | declared |
-| STDIO-08 | ofstream | 2 | declared |
+| STDIO-01 | fread | 295 | implemented, tested |
+| STDIO-02 | fopen | 68 | implemented, tested |
+| STDIO-03 | ftell | 80 | implemented, tested |
+| STDIO-04 | fflush | 12 | implemented, tested |
+| STDIO-05 | remove (C) | 21 | implemented, tested (archive: EROFS) |
+| STDIO-06 | rename (C) | 1 | implemented, tested |
+| STDIO-07 | ifstream | 2 | implemented, tested |
+| STDIO-08 | ofstream | 2 | implemented, tested (archive: failed stream) |
+| STDIO-09 | fclose (new) | n/a | implemented, tested |
 
 ## POSIX — include/rwzfs/io/posix.hpp
 | ID | Call | Calls | Status |
@@ -74,22 +75,22 @@ Routing: a path at or under a registered mountpoint (lexical check, see `include
 | POSIX-02 | read | 82 | implemented, tested |
 | POSIX-03 | write | 71 | implemented, tested |
 | POSIX-04 | open | 34 | implemented, tested |
-| POSIX-05 | stat | 30 | declared |
-| POSIX-06 | ioctl | 23 | declared |
+| POSIX-05 | stat | 30 | implemented, tested |
+| POSIX-06 | ioctl | 23 | implemented, tested |
 | POSIX-07 | seek (lseek) | 22 | implemented, tested |
-| POSIX-08 | unlink | 2 | declared |
-| POSIX-09 | mmap | 9 | declared |
-| POSIX-10 | realpath | 12 | declared |
-| POSIX-11 | opendir | 3 | declared |
-| POSIX-12 | readdir | 4 | declared |
-| POSIX-13 | closedir | 3 | declared |
-| POSIX-14 | mkdir | 2 | declared |
-| POSIX-15 | rmdir | 1 | declared |
-| POSIX-16 | truncate | 2 | declared |
-| POSIX-17 | access | 1 | declared |
+| POSIX-08 | unlink | 2 | implemented, tested |
+| POSIX-09 | mmap | 9 | implemented, tested |
+| POSIX-10 | realpath | 12 | implemented, tested |
+| POSIX-11 | opendir | 3 | implemented, tested |
+| POSIX-12 | readdir | 4 | implemented, tested |
+| POSIX-13 | closedir | 3 | implemented, tested |
+| POSIX-14 | mkdir | 2 | implemented, tested |
+| POSIX-15 | rmdir | 1 | implemented, tested |
+| POSIX-16 | truncate | 2 | implemented, tested |
+| POSIX-17 | access | 1 | implemented, tested |
 | POSIX-18 | fsync | 1 | implemented, tested |
 | POSIX-19 | getcwd | 2 | implemented, tested |
-| POSIX-20 | glob | 1 | declared |
+| POSIX-20 | glob | 1 | implemented, tested |
 
 ## Win32 — include/rwzfs/io/win32.hpp
 | ID | Call | Calls | Status |

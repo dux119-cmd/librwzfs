@@ -199,12 +199,12 @@ class FsRouting : public ::testing::Test {
   void SetUp() override {
     mounts::clear();
     rfs::cwd::clear();
-    ASSERT_TRUE(mounts::add("/rwzfs-test-mount"));
+    ASSERT_TRUE(mounts::add("/rwz"));
   }
   void TearDown() override { mounts::clear();
     rfs::cwd::clear(); }
 
-  const fs::path inside_ = "/rwzfs-test-mount/a/b.txt";
+  const fs::path inside_ = "/rwz/a/b.txt";
   const fs::path other_ = "/rwzfs-test-other/b.txt";
 };
 
@@ -312,6 +312,7 @@ TEST_F(FsRouting, OutsidePathsStillPassThrough) {
 }
 
 TEST_F(FsRouting, RelativePathsStillPassThrough) {
+  rfs::cwd::clear();
   std::error_code ec;
   EXPECT_EQ(rfs::absolute(fs::path("x"), ec), fs::absolute("x"));
   EXPECT_FALSE(ec);
@@ -319,14 +320,21 @@ TEST_F(FsRouting, RelativePathsStillPassThrough) {
 
 TEST_F(FsRouting, AbsoluteIsLexicalForArchivePaths) {
   std::error_code ec;
-  EXPECT_EQ(rfs::absolute(fs::path("/rwzfs-test-mount/a/../b"), ec),
-            fs::path("/rwzfs-test-mount/b"));
+  EXPECT_EQ(rfs::absolute(fs::path("/rwz/a/../b"), ec),
+            fs::path("/rwz/b"));
   EXPECT_FALSE(ec);
 }
 
 TEST_F(FsRouting, RelativePathsRouteWhenArchiveCwdIsSet) {
-  ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwzfs-test-mount/sub"));
+  ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwz/sub"));
   std::error_code ec;
   EXPECT_FALSE(rfs::exists("file.txt", ec));
   EXPECT_EQ(ec, std::errc::not_supported);
+}
+
+TEST_F(FsRouting, RelativePathsRouteAfterMount) {
+  std::error_code ec;
+  EXPECT_FALSE(rfs::exists("DIR/FILE.DAT", ec));
+  EXPECT_EQ(ec, std::errc::not_supported);
+  EXPECT_EQ(rfs::resolve("DIR/FILE.DAT"), fs::path("/rwz/DIR/FILE.DAT"));
 }

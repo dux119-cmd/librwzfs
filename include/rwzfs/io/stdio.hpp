@@ -8,8 +8,11 @@ namespace rwzfs::io::stdio {
 
 // STDIO-01 (295x)
 [[nodiscard]] std::size_t fread(void* buf, std::size_t size, std::size_t count, std::FILE* stream);
-// STDIO-02 (68x)
+// STDIO-02 (68x). Archive files open read-only. Write modes fail with EROFS.
+// An archive stream owns a private in-memory copy of the file. Close it with fclose below.
 [[nodiscard]] std::FILE* fopen(const char* path, const char* mode);
+// STDIO-09 (new). Closes any stream. Required for archive streams, which own a buffer.
+int fclose(std::FILE* stream);
 // STDIO-03 (80x)
 [[nodiscard]] long ftell(std::FILE* stream);
 // STDIO-04 (12x)

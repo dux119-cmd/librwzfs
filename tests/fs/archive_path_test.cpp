@@ -4,7 +4,9 @@
 #include <string_view>
 
 #include "rwzfs/fs/archive_path.hpp"
+#include <optional>
 
+namespace fs = std::filesystem;
 namespace rfs = rwzfs::fs;
 
 struct NormalizeCase {
@@ -59,3 +61,47 @@ TEST(NormalizeArchivePathWindows, BackslashIsSeparator) {
   EXPECT_EQ(*result, "a/c");
 }
 #endif
+
+#if !defined(_WIN32)
+
+TEST(ArchiveRoot, IsMagicPrefix) {
+  EXPECT_EQ(rfs::archive_root(), fs::path("/rwz"));
+}
+
+TEST(ArchiveAbsolute, ExpandsRelativeTextUnderRoot) {
+  EXPECT_EQ(*rfs::to_archive_absolute("DIR/FILE"), fs::path("/rwz/DIR/FILE"));
+  EXPECT_EQ(*rfs::to_archive_absolute("/a/../b"), fs::path("/rwz/b"));
+}
+
+TEST(ArchiveAbsolute, EmptyTextIsRoot) {
+  EXPECT_EQ(*rfs::to_archive_absolute(""), fs::path("/rwz"));
+}
+
+TEST(ArchiveAbsolute, RelativeEscapeIsRejected) {
+  const auto result = rfs::to_archive_absolute("../x");
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error(), rfs::archive_path_error::escapes_root);
+}
+
+TEST(ArchiveRelative, StripsRoot) {
+  EXPECT_EQ(rfs::to_archive_relative("/rwz/DIR/FILE"), std::optional<std::string>("DIR/FILE"));
+}
+
+TEST(ArchiveRelative, RootIsEmptyText) {
+  EXPECT_EQ(rfs::to_archive_relative("/rwz"), std::optional<std::string>(""));
+  EXPECT_EQ(rfs::to_archive_relative("/rwz/"), std::optional<std::string>(""));
+}
+
+TEST(ArchiveRelative, OutsideRootIsNullopt) {
+  EXPECT_FALSE(rfs::to_archive_relative("/rwzx/y").has_value());
+  EXPECT_FALSE(rfs::to_archive_relative("/other").has_value());
+  EXPECT_FALSE(rfs::to_archive_relative("/rwz/a/../../x").has_value());
+}
+
+TEST(ArchiveRoundTrip, RelativeToAbsoluteAndBack) {
+  const auto absolute = rfs::to_archive_absolute("dir/sub/file.txt");
+  ASSERT_TRUE(absolute.has_value());
+  EXPECT_EQ(rfs::to_archive_relative(*absolute), std::optional<std::string>("dir/sub/file.txt"));
+}
+
+#endif  // !defined(_WIN32)

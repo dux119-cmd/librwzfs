@@ -14,7 +14,8 @@ namespace rwzfs {
 // Example: "/data/archive.zip" -> "archive-writes".
 struct mount_options {
   // Top-level writable directory. Must be absolute. When unset, the user state area is used:
-  //   Linux, BSD:  $HOME/.local/state/rwz
+  //   Linux, BSD:  $XDG_STATE_HOME/rwz if XDG_STATE_HOME is an absolute path,
+  //                otherwise $HOME/.local/state/rwz
   //   macOS:       $HOME/Library/Application Support/rwz
   //   Windows:     %LOCALAPPDATA%\rwz
   std::optional<std::filesystem::path> write_root;

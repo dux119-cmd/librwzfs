@@ -60,6 +60,42 @@ TEST(OverlayDefaultRoot, UserStateAreaFromHome) {
 #endif
 }
 
+#if !defined(_WIN32) && !defined(__APPLE__)
+namespace {
+ov::env_lookup env_with(std::optional<std::string> xdg, std::optional<std::string> home) {
+  return [xdg, home](const char* name) -> std::optional<std::string> {
+    if (std::string(name) == "XDG_STATE_HOME") return xdg;
+    if (std::string(name) == "HOME") return home;
+    return std::nullopt;
+  };
+}
+}  // namespace
+
+TEST(OverlayDefaultRoot, AbsoluteXdgStateHomeIsUsed) {
+  const auto root = ov::default_write_root(env_with("/xdg/state", "/home/u"));
+  ASSERT_TRUE(root.has_value());
+  EXPECT_EQ(*root, fs::path("/xdg/state") / "rwz");
+}
+
+TEST(OverlayDefaultRoot, RelativeXdgStateHomeIsIgnored) {
+  const auto root = ov::default_write_root(env_with("relative/state", "/home/u"));
+  ASSERT_TRUE(root.has_value());
+  EXPECT_EQ(*root, fs::path("/home/u") / ".local" / "state" / "rwz");
+}
+
+TEST(OverlayDefaultRoot, UnsetXdgStateHomeFallsBackToHome) {
+  const auto root = ov::default_write_root(env_with(std::nullopt, "/home/u"));
+  ASSERT_TRUE(root.has_value());
+  EXPECT_EQ(*root, fs::path("/home/u") / ".local" / "state" / "rwz");
+}
+
+TEST(OverlayDefaultRoot, XdgStateHomeWithoutHomeStillWorks) {
+  const auto root = ov::default_write_root(env_with("/xdg/state", std::nullopt));
+  ASSERT_TRUE(root.has_value());
+  EXPECT_EQ(*root, fs::path("/xdg/state") / "rwz");
+}
+#endif
+
 TEST(OverlayDefaultRoot, MissingHomeIsReported) {
   const auto root = ov::default_write_root(env_empty());
   ASSERT_FALSE(root.has_value());

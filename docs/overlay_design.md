@@ -12,7 +12,7 @@ rwzfs::mount_archive("/data/archive.zip", "/rwz", opts);
 
 | Platform | Top-level directory |
 |---|---|
-| Linux, BSD | `$HOME/.local/state/rwz` |
+| Linux, BSD | `$XDG_STATE_HOME/rwz` if `XDG_STATE_HOME` is an absolute path, otherwise `$HOME/.local/state/rwz` |
 | macOS | `$HOME/Library/Application Support/rwz` |
 | Windows | `%LOCALAPPDATA%\rwz` |
 
@@ -41,6 +41,5 @@ Mounting creates the overlay directory, but no write is redirected yet. Writes o
 - Sizes and modes: the overlay copy is authoritative once it exists.
 
 ## Decisions to confirm
-- Extension stripping uses the first dot (`\..*`). The alternative is stripping only the last extension.
-- macOS and Windows defaults follow platform convention, not the Linux path.
-- No `XDG_STATE_HOME` override. Add it if wanted.
+- macOS and Windows defaults follow platform convention, not the Linux path. Confirm.
+- Stem collisions (two archives with the same stem) share an overlay directory. Decide whether to add a hash suffix.

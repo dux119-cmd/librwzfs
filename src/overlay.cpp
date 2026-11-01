@@ -35,7 +35,15 @@ std::expected<stdfs::path, overlay_error> default_write_root(const env_lookup& e
   const auto base = env("LOCALAPPDATA");
   if (!base) return std::unexpected(overlay_error::user_state_unknown);
   return stdfs::path(*base) / kAppDir;
+#elif defined(__APPLE__)
+  const auto home = env("HOME");
+  if (!home) return std::unexpected(overlay_error::user_state_unknown);
+  return stdfs::path(*home) / state_relative_to_home();
 #else
+  // XDG Base Directory spec: XDG_STATE_HOME is used only when it is an absolute path.
+  if (const auto xdg = env("XDG_STATE_HOME"); xdg && stdfs::path(*xdg).is_absolute()) {
+    return stdfs::path(*xdg) / kAppDir;
+  }
   const auto home = env("HOME");
   if (!home) return std::unexpected(overlay_error::user_state_unknown);
   return stdfs::path(*home) / state_relative_to_home();

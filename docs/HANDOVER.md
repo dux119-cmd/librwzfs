@@ -40,8 +40,8 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 - `CMakePresets.json` sets build and test `jobs` to 0, which uses all cores with the native build tool. Plain `cmake --build build` does not: pass `--parallel` or set `CMAKE_BUILD_PARALLEL_LEVEL`. CMake cannot set this from `CMakeLists.txt`.
 
 ## Tests
-- Standalone (no dwarfs): 243 tests pass with `-Wall -Wextra -Werror`.
-- CMake with dwarfs: 268 tests pass under CTest. Mount tests use a temporary write root, so they never write to the real user state directory. CTest rebuilds the test archive (`build/fixtures/fixture.dwarfs`, from `tests/archive/make_fixture.cmake`) before tests that need it. The archive content is fixed and listed in that file. Tests check the exact content.
+- Standalone (no dwarfs): 247 tests pass with `-Wall -Wextra -Werror`.
+- CMake with dwarfs: 272 tests pass under CTest. Mount tests use a temporary write root, so they never write to the real user state directory. CTest rebuilds the test archive (`build/fixtures/fixture.dwarfs`, from `tests/archive/make_fixture.cmake`) before tests that need it. The archive content is fixed and listed in that file. Tests check the exact content.
 - The dwarfs libraries used for testing came from upstream 0.15.5. The headers were the uploaded set (0.15.3). Key headers are identical.
 
 ## Decisions (settled)
@@ -52,7 +52,7 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 5. `close`, `seek`, `write`, `truncate` map to POSIX. `remove`, `rename` map to C stdio.
 6. Directory iterators are wrapper classes with the standard interface.
 7. Archive stdio streams are read-only in-memory copies. The buffer is freed by `fclose`.
-8. Overlay storage: `mount_options::write_root` is the top-level writable directory. The library creates `<stem>-writes` inside it. Default is the platform user state area. See docs/overlay_design.md.
+8. Overlay storage: `mount_options::write_root` is the top-level writable directory. The library creates `<stem>-writes` inside it. Default: `$XDG_STATE_HOME/rwz` when `XDG_STATE_HOME` is an absolute path, else `$HOME/.local/state/rwz` on Linux and BSD; `~/Library/Application Support/rwz` on macOS; `%LOCALAPPDATA%\rwz` on Windows. The archive stem is the file name up to its first dot. See docs/overlay_design.md.
 
 ## Remaining work (in order)
 1. **Copy-on-write engine.** Copy-up on first write, read-through, create/rename/delete with whiteouts, merged directory listings. Storage location is in place (docs/overlay_design.md). Confirm the open decisions there first.

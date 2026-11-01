@@ -17,6 +17,7 @@ namespace fs = std::filesystem;
 struct mount_entry {
   fs::path mountpoint;
   std::shared_ptr<const archive::backend> backend;
+  fs::path overlay;
 };
 
 std::mutex& table_mutex() {
@@ -40,14 +41,15 @@ bool is_valid_mountpoint(const fs::path& p) {
   return p.is_absolute() && is_within(p.lexically_normal(), archive_root());
 }
 
-bool add(const fs::path& mountpoint, std::shared_ptr<const archive::backend> backend) {
+bool add(const fs::path& mountpoint, std::shared_ptr<const archive::backend> backend,
+         fs::path overlay) {
   if (!is_valid_mountpoint(mountpoint)) {
     return false;
   }
   const auto normalized = mountpoint.lexically_normal();
   {
     const std::scoped_lock lock(table_mutex());
-    table().push_back({normalized, std::move(backend)});
+    table().push_back({normalized, std::move(backend), std::move(overlay)});
   }
   // Relative paths resolve into the archive by default once one is mounted.
   if (!cwd::archive_cwd()) {
@@ -96,7 +98,7 @@ std::optional<route> find(const fs::path& p) {
   if (rel == ".") {
     rel.clear();
   }
-  return route{best->backend, std::move(rel), target};
+  return route{best->backend, std::move(rel), target, best->overlay};
 }
 
 }  // namespace rwzfs::fs::mounts

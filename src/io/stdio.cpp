@@ -7,11 +7,13 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <system_error>
 #include <string>
 
 #include "rwzfs/archive/backend.hpp"
 #include "rwzfs/fs/cwd.hpp"
 #include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/resolve.hpp"
 
 namespace rwzfs::io::stdio {
 
@@ -19,6 +21,18 @@ namespace fs = rwzfs::fs;
 using rwzfs::fs::mounts::route;
 
 namespace {
+
+// Resolves a caller path (CWD-05). On failure sets errno (for example ELOOP) and returns nullopt.
+std::optional<fs::path> resolved(const std::string& text, bool follow_final = true) {
+  std::error_code ec;
+  const auto p = follow_final ? fs::resolve(fs::path(text), ec)
+                              : fs::resolve_no_follow(fs::path(text), ec);
+  if (ec) {
+    errno = ec.value();
+    return std::nullopt;
+  }
+  return p;
+}
 
 // Archive streams keep their buffer here until fclose. fmemopen does not own the buffer.
 std::mutex& stream_mutex() {
@@ -102,15 +116,16 @@ std::size_t fread(void* buf, std::size_t size, std::size_t count, std::FILE* str
 
 // STDIO-02
 std::FILE* fopen(const char* path, const char* mode) {
-  const auto p = fs::resolve(fs::path(path));
-  if (const auto r = fs::mounts::find(p)) {
+  const auto p = resolved(path);
+  if (!p) return nullptr;
+  if (const auto r = fs::mounts::find(*p)) {
     if (has_write_intent(mode)) {
       errno = EROFS;
       return nullptr;
     }
     return open_archive_stream(*r);
   }
-  return std::fopen(p.c_str(), mode);
+  return std::fopen(p->c_str(), mode);
 }
 
 // STDIO-03
@@ -129,35 +144,38 @@ int fclose(std::FILE* stream) {
 
 // STDIO-05
 int remove(const char* path) {
-  const auto p = fs::resolve(fs::path(path));
-  if (const auto r = fs::mounts::find(p)) {
+  const auto p = resolved(path, false);
+  if (!p) return -1;
+  if (const auto r = fs::mounts::find(*p)) {
     errno = r->backend ? EROFS : ENOTSUP;
     return -1;
   }
-  return std::remove(p.c_str());
+  return std::remove(p->c_str());
 }
 
 // STDIO-06
 int rename(const char* from, const char* to) {
-  const auto src = fs::resolve(fs::path(from));
-  const auto dst = fs::resolve(fs::path(to));
-  if (const auto r = fs::mounts::find(src)) {
+  const auto src = resolved(from, false);
+  if (!src) return -1;
+  const auto dst = resolved(to, false);
+  if (!dst) return -1;
+  if (const auto r = fs::mounts::find(*src)) {
     errno = r->backend ? EROFS : ENOTSUP;
     return -1;
   }
-  if (const auto r = fs::mounts::find(dst)) {
+  if (const auto r = fs::mounts::find(*dst)) {
     errno = r->backend ? EROFS : ENOTSUP;
     return -1;
   }
-  return std::rename(src.c_str(), dst.c_str());
+  return std::rename(src->c_str(), dst->c_str());
 }
 
 // STDIO-07. A stream for an archive path is returned in the failed state.
 // Not yet supported for archive files: this stream type cannot wrap an in-memory copy.
 std::ifstream input_file_stream(const std::string& path) {
-  const auto p = fs::resolve(fs::path(path));
-  if (!fs::mounts::is_archive_path(p)) {
-    return std::ifstream(p);
+  const auto p = resolved(path);
+  if (p && !fs::mounts::is_archive_path(*p)) {
+    return std::ifstream(*p);
   }
   std::ifstream failed;
   failed.setstate(std::ios::failbit);
@@ -166,9 +184,9 @@ std::ifstream input_file_stream(const std::string& path) {
 
 // STDIO-08. A stream for an archive path is returned in the failed state.
 std::ofstream output_file_stream(const std::string& path) {
-  const auto p = fs::resolve(fs::path(path));
-  if (!fs::mounts::is_archive_path(p)) {
-    return std::ofstream(p);
+  const auto p = resolved(path);
+  if (p && !fs::mounts::is_archive_path(*p)) {
+    return std::ofstream(*p);
   }
   std::ofstream failed;
   failed.setstate(std::ios::failbit);

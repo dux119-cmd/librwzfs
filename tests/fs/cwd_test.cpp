@@ -5,6 +5,7 @@
 #include <system_error>
 
 #include "rwzfs/fs/cwd.hpp"
+#include "rwzfs/fs/resolve.hpp"
 #include "rwzfs/fs/filesystem.hpp"
 #include "rwzfs/fs/mount_table.hpp"
 #include "test_support.hpp"
@@ -37,29 +38,29 @@ class CwdTest : public ::testing::Test {
 
 TEST(CwdResolve, AbsoluteUnchangedWithoutArchiveCwd) {
   rfs::cwd::clear();
-  EXPECT_EQ(rfs::resolve("/abs/x"), fs::path("/abs/x"));
+  EXPECT_EQ(rfs::resolve_lexical("/abs/x"), fs::path("/abs/x"));
 }
 
 TEST(CwdResolve, RelativeUnchangedWithoutArchiveCwd) {
   rfs::cwd::clear();
-  EXPECT_EQ(rfs::resolve("x"), fs::path("x"));
+  EXPECT_EQ(rfs::resolve_lexical("x"), fs::path("x"));
 }
 
 TEST_F(CwdTest, RelativeResolvesAgainstArchiveCwd) {
-  EXPECT_EQ(rfs::resolve("x"), fs::path("/rwz/sub/x"));
+  EXPECT_EQ(rfs::resolve_lexical("x"), fs::path("/rwz/sub/x"));
 }
 
 TEST_F(CwdTest, DotAndDotDotNormalizeLexically) {
-  EXPECT_EQ(rfs::resolve("./a/../b"), fs::path("/rwz/sub/b"));
-  EXPECT_EQ(rfs::resolve("."), fs::path("/rwz/sub"));
+  EXPECT_EQ(rfs::resolve_lexical("./a/../b"), fs::path("/rwz/sub/b"));
+  EXPECT_EQ(rfs::resolve_lexical("."), fs::path("/rwz/sub"));
 }
 
 TEST_F(CwdTest, DotDotCanLeaveArchiveToHostPath) {
-  EXPECT_EQ(rfs::resolve("../../host/x"), fs::path("/host/x"));
+  EXPECT_EQ(rfs::resolve_lexical("../../host/x"), fs::path("/host/x"));
 }
 
 TEST_F(CwdTest, AbsoluteIgnoresArchiveCwd) {
-  EXPECT_EQ(rfs::resolve("/abs/x"), fs::path("/abs/x"));
+  EXPECT_EQ(rfs::resolve_lexical("/abs/x"), fs::path("/abs/x"));
 }
 
 // CWD-05 / CWD-01 / CWD-02: state
@@ -123,5 +124,5 @@ TEST_F(CwdTest, AbsoluteIsLexicalUnderArchiveCwd) {
 TEST_F(CwdTest, ArchiveRootIsReachableByPrefix) {
   EXPECT_TRUE(rfs::cwd::set_archive_cwd("/rwz"));
   EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path("/rwz"));
-  EXPECT_EQ(rfs::resolve("x"), fs::path("/rwz/x"));
+  EXPECT_EQ(rfs::resolve_lexical("x"), fs::path("/rwz/x"));
 }

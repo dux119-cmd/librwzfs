@@ -6,6 +6,7 @@
 #include <system_error>
 
 #include "rwzfs/fs/cwd.hpp"
+#include "rwzfs/fs/resolve.hpp"
 #include "rwzfs/fs/filesystem.hpp"
 #include "rwzfs/fs/mount_table.hpp"
 #include "test_support.hpp"
@@ -336,5 +337,5 @@ TEST_F(FsRouting, RelativePathsRouteAfterMount) {
   std::error_code ec;
   EXPECT_FALSE(rfs::exists("DIR/FILE.DAT", ec));
   EXPECT_EQ(ec, std::errc::not_supported);
-  EXPECT_EQ(rfs::resolve("DIR/FILE.DAT"), fs::path("/rwz/DIR/FILE.DAT"));
+  EXPECT_EQ(rfs::resolve_lexical("DIR/FILE.DAT"), fs::path("/rwz/DIR/FILE.DAT"));
 }

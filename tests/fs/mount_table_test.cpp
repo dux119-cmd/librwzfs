@@ -3,6 +3,7 @@
 #include <filesystem>
 
 #include "rwzfs/fs/cwd.hpp"
+#include "rwzfs/fs/resolve.hpp"
 #include "rwzfs/fs/mount_table.hpp"
 
 namespace fs = std::filesystem;
@@ -74,7 +75,7 @@ TEST_F(MountTable, ClearRemovesAllMounts) {
 TEST_F(MountTable, FirstMountBecomesArchiveCwd) {
   ASSERT_TRUE(mounts::add("/rwz"));
   EXPECT_EQ(rwzfs::fs::cwd::archive_cwd(), fs::path("/rwz"));
-  EXPECT_EQ(rwzfs::fs::resolve("DIR/FILE.DAT"), fs::path("/rwz/DIR/FILE.DAT"));
+  EXPECT_EQ(rwzfs::fs::resolve_lexical("DIR/FILE.DAT"), fs::path("/rwz/DIR/FILE.DAT"));
 }
 
 TEST_F(MountTable, LaterMountKeepsExistingArchiveCwd) {
@@ -87,5 +88,5 @@ TEST_F(MountTable, ClearRestoresHostRelativePaths) {
   ASSERT_TRUE(mounts::add("/rwz"));
   mounts::clear();
   EXPECT_FALSE(rwzfs::fs::cwd::archive_cwd().has_value());
-  EXPECT_EQ(rwzfs::fs::resolve("x"), fs::path("x"));
+  EXPECT_EQ(rwzfs::fs::resolve_lexical("x"), fs::path("x"));
 }

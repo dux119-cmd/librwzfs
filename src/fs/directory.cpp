@@ -6,7 +6,9 @@
 #include <utility>
 
 #include "rwzfs/fs/cwd.hpp"
+#include "rwzfs/fs/filesystem.hpp"
 #include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/resolve.hpp"
 
 namespace rwzfs::fs {
 
@@ -81,8 +83,10 @@ directory_entry directory_entry::from_archive(stdfs::path absolute, archive::ent
   return d;
 }
 
+// Like std::filesystem::directory_entry: status-style queries follow symlinks, is_symlink does not.
 stdfs::file_status directory_entry::status(std::error_code& ec) const {
   if (host_) return host_->status(ec);
+  if (info_.type == archive::kind::symlink) return fs::status(path_, ec);
   ec.clear();
   return stdfs::file_status(file_type_of(info_.type),
                             static_cast<stdfs::perms>(info_.mode & 07777));
@@ -90,12 +94,14 @@ stdfs::file_status directory_entry::status(std::error_code& ec) const {
 
 bool directory_entry::is_directory(std::error_code& ec) const {
   if (host_) return host_->is_directory(ec);
+  if (info_.type == archive::kind::symlink) return fs::is_directory(path_, ec);
   ec.clear();
   return info_.type == archive::kind::directory;
 }
 
 bool directory_entry::is_regular_file(std::error_code& ec) const {
   if (host_) return host_->is_regular_file(ec);
+  if (info_.type == archive::kind::symlink) return fs::is_regular_file(path_, ec);
   ec.clear();
   return info_.type == archive::kind::file;
 }
@@ -108,14 +114,33 @@ bool directory_entry::is_symlink(std::error_code& ec) const {
 
 std::uintmax_t directory_entry::file_size(std::error_code& ec) const {
   if (host_) return host_->file_size(ec);
-  ec.clear();
-  return info_.size;
+  if (info_.type != archive::kind::symlink) {
+    ec.clear();
+    return info_.size;
+  }
+  const auto target = resolve(path_, ec);
+  if (ec) return 0;
+  if (const auto r = mounts::find(target)) {
+    if (!r->backend) {
+      ec = std::make_error_code(std::errc::not_supported);
+      return 0;
+    }
+    const auto e = r->backend->lookup(r->rel);
+    if (!e) {
+      ec = std::make_error_code(std::errc::no_such_file_or_directory);
+      return 0;
+    }
+    ec.clear();
+    return e->size;
+  }
+  return stdfs::file_size(target, ec);
 }
 
 // directory_iterator
 
 directory_iterator::directory_iterator(const stdfs::path& in, std::error_code& ec) {
-  const auto p = resolve(in);
+  const auto p = resolve(in, ec);
+  if (ec) return;
   if (const auto r = mounts::find(p)) {
     detail::archive_cursor cursor;
     if (!open_archive_listing(*r, cursor, ec)) return;
@@ -185,7 +210,8 @@ recursive_directory_iterator::recursive_directory_iterator(const stdfs::path& in
                                                            stdfs::directory_options options,
                                                            std::error_code& ec)
     : options_(options) {
-  const auto p = resolve(in);
+  const auto p = resolve(in, ec);
+  if (ec) return;
   if (const auto r = mounts::find(p)) {
     detail::archive_cursor cursor;
     if (!open_archive_listing(*r, cursor, ec)) return;

@@ -8,12 +8,8 @@
 
 namespace rwzfs::fs {
 
-// CWD-05. Resolves p against the archive working directory when one is set.
-// See docs/cwd_design.md.
-[[nodiscard]] path resolve(const path& p);
-
-// CWD-02/CWD-03. Changes the working directory. Archive targets are not supported
-// until archive lookups exist.
+// CWD-02/CWD-03. Changes the working directory. Archive targets must be existing directories
+// in the archive. See resolve.hpp for path resolution (CWD-05).
 void change_directory(const path& p, std::error_code& ec);
 
 namespace cwd {

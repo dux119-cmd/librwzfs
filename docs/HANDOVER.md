@@ -21,64 +21,66 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 |---|---|---|
 | Path wrappers | PATH-01..14 | Implemented, tested |
 | Archive path normalization, archive root | PATH-15, `archive_root` | Implemented, tested |
-| Path walk (`..`, symlink-aware for host) | `walk_lexically` | Implemented, tested |
+| Path walk and resolution | `walk_lexically`, `resolve`, `resolve_no_follow` | Implemented, tested. Archive symlinks followed, 5-link limit (`ELOOP`). |
 | Working directory | CWD-01..05 | Implemented, tested. `chdir` verifies archive directories. |
-| Mount table | `mounts::add/find/clear` | Implemented, tested. Mounting sets the archive working directory. |
+| Mount table | `mounts::add/find/clear` | Implemented, tested. Mounting sets the archive working directory. Each mount records its overlay directory. |
+| Overlay storage path | `mount_options`, `overlay::overlay_directory` | Implemented, tested. Creates `<write root>/<stem>-writes` at mount. Copy-on-write engine not yet implemented. See docs/overlay_design.md. |
 | Archive open | `mount_archive` | Opens the dwarfs image, registers it with its mountpoint. |
-| Archive read backend | `archive::backend`, dwarfs backend | Implemented, tested against the dwarfs fixture |
+| Archive read backend | `archive::backend`, dwarfs backend | Implemented, tested against the dwarfs fixture (including symlinks). |
 | Archive descriptors, DIR handles | `archive_io` | Implemented, tested |
 | POSIX wrappers | POSIX-01..20 | Implemented, tested. Archive: read-only, mutations `EROFS`. |
-| FS queries | FS-01..24 | Implemented, tested. `exists`, `status`, `is_*`, `canonical`, `equivalent`, `is_empty`, `read_symlink` work on archives. Mutations return `EROFS`. `last_write_time`, `space`, `proximate` return `not_supported`. |
-| Directory iterators | FS-09, FS-18 | Implemented, tested. Classes, not std types. |
+| FS queries | FS-01..24 | Implemented, tested. `exists`, `status`, `is_*`, `canonical`, `equivalent`, `is_empty`, `read_symlink` work on archives. Mutations `EROFS`. `last_write_time`, `space`, `proximate` `not_supported`. |
+| Directory iterators | FS-09, FS-18 | Implemented, tested. Classes with the standard interface. |
 | Stdio wrappers | STDIO-01..09 | Implemented, tested. Archive files: read-only in-memory copy. |
 | Win32 wrappers | WIN-01..05 | Declared only. Needs a Windows toolchain. |
 
+## Build and test settings
+- ccache is used when installed, with `CCACHE_COMPRESSLEVEL=6` applied through the compiler launcher. Disable with `-DRWZFS_USE_CCACHE=OFF`.
+- Precompiled headers cover the common standard headers, for the library and the tests. Disable with `-DRWZFS_PCH=OFF`.
+- `CMakePresets.json` sets build and test `jobs` to 0, which uses all cores with the native build tool. Plain `cmake --build build` does not: pass `--parallel` or set `CMAKE_BUILD_PARALLEL_LEVEL`. CMake cannot set this from `CMakeLists.txt`.
+
 ## Tests
-- Standalone (no dwarfs): 214 tests pass with `-Wall -Wextra -Werror`.
-- CMake with dwarfs: 227 tests pass under CTest. CTest rebuilds the test archive (`build/fixtures/fixture.dwarfs`, from `tests/archive/make_fixture.cmake`) before tests that need it. The archive content is fixed: `DIR/FILE.DAT` containing `payload`, and nothing else. Tests check that exact content.
+- Standalone (no dwarfs): 243 tests pass with `-Wall -Wextra -Werror`.
+- CMake with dwarfs: 268 tests pass under CTest. Mount tests use a temporary write root, so they never write to the real user state directory. CTest rebuilds the test archive (`build/fixtures/fixture.dwarfs`, from `tests/archive/make_fixture.cmake`) before tests that need it. The archive content is fixed and listed in that file. Tests check the exact content.
 - The dwarfs libraries used for testing came from upstream 0.15.5. The headers were the uploaded set (0.15.3). Key headers are identical.
 
 ## Decisions (settled)
 1. `..` from the archive root leaves the archive, resolving to the host path `/`.
-2. Host symlinks are followed. `..` is lexical only inside the archive.
+2. Host symlinks are followed by the OS. Archive symlinks are followed by `resolve()`, at most 5 per path (`ELOOP` beyond that).
 3. While an archive is mounted, host paths under `/rwz` route to the archive.
 4. The Windows root is fixed to drive `C:`.
 5. `close`, `seek`, `write`, `truncate` map to POSIX. `remove`, `rename` map to C stdio.
-6. Directory iterators are wrapper classes with the standard interface. Callers using `auto` need no changes.
+6. Directory iterators are wrapper classes with the standard interface.
 7. Archive stdio streams are read-only in-memory copies. The buffer is freed by `fclose`.
+8. Overlay storage: `mount_options::write_root` is the top-level writable directory. The library creates `<stem>-writes` inside it. Default is the platform user state area. See docs/overlay_design.md.
 
 ## Remaining work (in order)
-1. **Archive symlink following.** Reads of link targets work (`read_symlink`). Following links during resolution does not. This needs a design first. Open questions:
-   - A link target outside the archive (for example `/usr/lib/x`) becomes a host path. Its remaining components should go to the OS unchanged, as `..` already does.
-   - Relative targets resolve against the link's directory, inside the archive.
-   - `..` after a link must be resolved against the link's target, as the OS does, not lexically.
-   - Loop limit: `ELOOP` after 40 links, matching POSIX.
-   Plan: implement it inside `resolve()`, walking component by component, so `link/..` behaves like the OS.
-2. **Overlay writes.** Create, write, rename, delete, stored outside the archive. Needs a storage location decision and a design doc.
-3. **Streaming for large archive files.** The current stdio path copies whole files into memory. Check `fmemopen` availability on macOS and BSD before relying on it.
-4. **Windows wrappers (WIN-01..05)** and helpers not in the call list (for example `CloseHandle`, `FindClose`). Needs a Windows toolchain.
-5. **Cross-platform test matrix** (Linux, macOS, BSD, Windows).
-6. **Fixture symlinks.** The fixture has no symlinks, so link following is untested against real dwarfs. Adding them needs a change to the fixture content and its exact-content tests.
+1. **Copy-on-write engine.** Copy-up on first write, read-through, create/rename/delete with whiteouts, merged directory listings. Storage location is in place (docs/overlay_design.md). Confirm the open decisions there first.
+2. **Streaming for large archive files.** The stdio path copies whole files into memory. Check `fmemopen` on macOS and BSD before relying on it.
+3. **Windows wrappers (WIN-01..05)** and helpers not in the call list (for example `CloseHandle`, `FindClose`). Needs a Windows toolchain.
+4. **Cross-platform test matrix** (Linux, macOS, BSD, Windows).
 
 ## Known limitations
-- Archive symlinks are reported as links and not followed. `open`, `stat`, and similar calls on a link do not follow it.
 - `input_file_stream` and `output_file_stream` return failed streams for archive paths. A C++ stream cannot wrap an in-memory copy.
 - `glob` does not list archive entries.
 - `ioctl` is declared with one `void*` argument. Variadic callers must be checked.
 - `getcwd` with an archive working directory and a null buffer returns `EINVAL`.
 - Archive stdio streams hold the whole file in memory.
 - Archive descriptor numbers are never reused.
+- Host symlinks that point into `/rwz` are not followed into the archive.
 
 ## Building and testing
 ```
-cmake -S . -B build -DDWARFS_PREFIX=/usr/local      # mkdwarfs must be in DWARFS_PREFIX/bin or on PATH
-cmake --build build
-ctest --test-dir build --output-on-failure           # CTest rebuilds the test archive first
+cmake --preset default                               # or: cmake -S . -B build -DDWARFS_PREFIX=/usr/local
+cmake --build --preset default                       # uses all cores
+ctest --preset default                               # rebuilds the test archive first
 ```
 Run tests through CTest, not the test binary directly, so the archive fixture is regenerated.
+`mkdwarfs` must be in `DWARFS_PREFIX/bin` or on `PATH`.
 
 ## Layout
 - `include/rwzfs/` public headers (`fs/`, `io/`, `archive/`, `mount.hpp`)
 - `src/` implementations (`src/archive/dwarfs_backend.cpp` is the only dwarfs-dependent backend file)
 - `tests/` GoogleTest suites (`tests/fs/`, `tests/io/`, `tests/archive/`, `tests/support/` fake backend)
 - `docs/` specs: `archive_paths.md`, `cwd_design.md`, `archive_access.md`, `wrapper_chunks.md`, this file
+- `CMakePresets.json` configure, build, and test presets

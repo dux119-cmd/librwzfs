@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <fcntl.h>
@@ -12,8 +13,10 @@
 #include "rwzfs/fs/cwd.hpp"
 #include "rwzfs/fs/filesystem.hpp"
 #include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/resolve.hpp"
 #include "rwzfs/io/posix.hpp"
 #include "rwzfs/mount.hpp"
+#include "../fs/test_support.hpp"
 
 namespace fs = std::filesystem;
 namespace mounts = rwzfs::fs::mounts;
@@ -43,20 +46,93 @@ class DwarfsArchive : public ::testing::Test {
   void SetUp() override {
     mounts::clear();
     rfs::cwd::clear();
-    ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive), rwzfs::MountError::None);
+    rwzfs::mount_options options;
+    options.write_root = writes_.path();  // keep overlays out of the real user state directory
+    ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", options), rwzfs::MountError::None);
   }
   void TearDown() override {
     mounts::clear();
     rfs::cwd::clear();
   }
+
+  TempDir writes_;
 };
 
-TEST_F(DwarfsArchive, RootContainsExactlyTheFixtureDirectory) {
-  EXPECT_EQ(list_names("/rwz"), (std::set<std::string>{".", "..", "DIR"}));
+TEST_F(DwarfsArchive, RootContainsExactlyTheFixtureEntries) {
+  EXPECT_EQ(list_names("/rwz"),
+            (std::set<std::string>{".", "..", "DIR", "LINK_REL", "LINK_ABS", "HOSTLINK",
+                                   "DIRLINK", "NESTLINK", "DANGLING", "LOOP_A", "LOOP_B"}));
 }
 
-TEST_F(DwarfsArchive, DirectoryContainsExactlyTheFixtureFile) {
-  EXPECT_EQ(list_names("/rwz/DIR"), (std::set<std::string>{".", "..", "FILE.DAT"}));
+TEST_F(DwarfsArchive, DirectoryContainsExactlyTheFixtureEntries) {
+  EXPECT_EQ(list_names("/rwz/DIR"),
+            (std::set<std::string>{".", "..", "FILE.DAT", "SUB", "UP", "UPROOT"}));
+}
+
+TEST_F(DwarfsArchive, LinkTargetsAreReadVerbatim) {
+  std::error_code ec;
+  EXPECT_EQ(rfs::read_symlink(fs::path("/rwz/LINK_REL"), ec), fs::path("DIR/FILE.DAT"));
+  EXPECT_EQ(rfs::read_symlink(fs::path("/rwz/LINK_ABS"), ec), fs::path("/rwz/DIR/FILE.DAT"));
+  EXPECT_EQ(rfs::read_symlink(fs::path("/rwz/DIR/UP"), ec), fs::path("../DIR/FILE.DAT"));
+  EXPECT_FALSE(ec);
+}
+
+TEST_F(DwarfsArchive, RelativeLinkReadsPayload) {
+  const int fd = posix::open("/rwz/LINK_REL", O_RDONLY, 0);
+  ASSERT_GE(fd, 0);
+  char buf[16] = {};
+  EXPECT_EQ(posix::read(fd, buf, sizeof(buf)), static_cast<ssize_t>(kPayloadSize));
+  EXPECT_EQ(std::string(buf, kPayloadSize), kFixturePayload);
+  posix::close(fd);
+}
+
+TEST_F(DwarfsArchive, AbsoluteLinkReadsPayload) {
+  std::error_code ec;
+  EXPECT_TRUE(rfs::is_regular_file(fs::path("/rwz/LINK_ABS"), ec));
+  EXPECT_FALSE(ec);
+  EXPECT_TRUE(rfs::is_symlink(fs::path("/rwz/LINK_ABS"), ec));
+}
+
+TEST_F(DwarfsArchive, UpLinkResolvesWithinDirectory) {
+  std::error_code ec;
+  EXPECT_EQ(rfs::resolve(fs::path("/rwz/DIR/UP"), ec), fs::path("/rwz/DIR/FILE.DAT"));
+  EXPECT_FALSE(ec);
+}
+
+TEST_F(DwarfsArchive, DirectoryLinkResolvesChildren) {
+  std::error_code ec;
+  EXPECT_EQ(rfs::resolve(fs::path("/rwz/DIRLINK/FILE.DAT"), ec), fs::path("/rwz/DIR/FILE.DAT"));
+  EXPECT_TRUE(rfs::is_directory(fs::path("/rwz/DIRLINK"), ec));
+}
+
+TEST_F(DwarfsArchive, DotDotAfterDirectoryLinkFollowsTheLinkTarget) {
+  std::error_code ec;
+  EXPECT_EQ(rfs::resolve(fs::path("/rwz/NESTLINK/../FILE.DAT"), ec),
+            fs::path("/rwz/DIR/FILE.DAT"));
+}
+
+TEST_F(DwarfsArchive, AbsoluteHostLinkLeavesTheArchive) {
+  std::error_code ec;
+  EXPECT_EQ(rfs::resolve(fs::path("/rwz/HOSTLINK"), ec), fs::path("/etc/rwz-test-host"));
+  EXPECT_FALSE(mounts::is_archive_path(fs::path("/etc/rwz-test-host")));
+}
+
+TEST_F(DwarfsArchive, RelativeLinkClimbingAboveRootLeavesTheArchive) {
+  std::error_code ec;
+  EXPECT_EQ(rfs::resolve(fs::path("/rwz/DIR/UPROOT"), ec), fs::path("/hostfile"));
+}
+
+TEST_F(DwarfsArchive, DanglingLinkIsMissing) {
+  std::error_code ec;
+  EXPECT_FALSE(rfs::exists(fs::path("/rwz/DANGLING"), ec));
+  EXPECT_FALSE(ec);
+  EXPECT_TRUE(rfs::is_symlink(fs::path("/rwz/DANGLING"), ec));
+}
+
+TEST_F(DwarfsArchive, LoopFailsWithEloop) {
+  errno = 0;
+  EXPECT_EQ(posix::open("/rwz/LOOP_A", O_RDONLY, 0), -1);
+  EXPECT_EQ(errno, ELOOP);
 }
 
 TEST_F(DwarfsArchive, ReadsExactPayload) {

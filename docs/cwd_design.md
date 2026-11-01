@@ -40,3 +40,6 @@ Inside the archive, `..` is applied lexically. Once a path leaves the archive, o
 - Archive target not yet supported: `std::errc::not_supported` (`ENOTSUP` at the POSIX layer).
 - `getcwd` with an archive cwd and a too-small buffer: `ERANGE`.
 - `getcwd` with an archive cwd and a null buffer: `EINVAL`. Allocation is not implemented.
+
+## Symlinks
+Path resolution now follows archive symlinks component by component, with a limit of 5 links. See `docs/archive_access.md` (Symlinks). The lexical rules above still apply to paths that contain no archive links; `resolve_lexical` gives the purely lexical result.

@@ -1,5 +1,6 @@
 #include "rwzfs/fs/walk.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -8,11 +9,11 @@
 
 namespace rwzfs::fs {
 
-namespace {
-
 namespace stdfs = std::filesystem;
 
-std::vector<std::string> split(const std::string& text) {
+namespace detail {
+
+std::vector<std::string> components(std::string_view text) {
   std::vector<std::string> parts;
   std::string current;
   for (const char c : text) {
@@ -27,13 +28,7 @@ std::vector<std::string> split(const std::string& text) {
   return parts;
 }
 
-bool has_prefix(const std::vector<std::string>& parts, const std::vector<std::string>& prefix) {
-  return parts.size() >= prefix.size() &&
-         std::equal(prefix.begin(), prefix.end(), parts.begin());
-}
-
-// Renders parts[from..] as an absolute path. A leading drive token ("C:") replaces the slash.
-stdfs::path render(const std::vector<std::string>& parts, std::size_t from) {
+stdfs::path absolute_from(const std::vector<std::string>& parts, std::size_t from) {
   const bool drive = !parts.empty() && parts.front().find(':') != std::string::npos;
   std::string text = drive ? "" : "/";
   for (std::size_t i = from; i < parts.size(); ++i) {
@@ -43,14 +38,19 @@ stdfs::path render(const std::vector<std::string>& parts, std::size_t from) {
   return stdfs::path(text.empty() ? "/" : text);
 }
 
-}  // namespace
+bool has_prefix(const std::vector<std::string>& parts, const std::vector<std::string>& prefix) {
+  return parts.size() >= prefix.size() &&
+         std::equal(prefix.begin(), prefix.end(), parts.begin());
+}
+
+}  // namespace detail
 
 stdfs::path walk_lexically(const stdfs::path& p) {
   if (!p.is_absolute()) {
     return p;
   }
-  const auto tokens = split(p.generic_string());
-  const auto root = split(archive_root().generic_string());
+  const auto tokens = detail::components(p.generic_string());
+  const auto root = detail::components(archive_root().generic_string());
   std::vector<std::string> out;
   for (std::size_t i = 0; i < tokens.size(); ++i) {
     const auto& token = tokens[i];
@@ -58,18 +58,21 @@ stdfs::path walk_lexically(const stdfs::path& p) {
       continue;
     }
     if (token == "..") {
-      if (!has_prefix(out, root)) {
+      if (!detail::has_prefix(out, root)) {
         return p;  // host path: leave ".." to the OS so symlinks are followed
       }
       if (out.size() > root.size()) {
         out.pop_back();
         continue;
       }
-      return render(tokens, i + 1);  // leaves the archive: the rest is a host path
+      return detail::absolute_from(
+          std::vector<std::string>(tokens.begin() + static_cast<std::ptrdiff_t>(i) + 1,
+                                   tokens.end()),
+          0);  // leaves the archive: the rest is a host path
     }
     out.push_back(token);
   }
-  return render(out, 0);
+  return detail::absolute_from(out, 0);
 }
 
 }  // namespace rwzfs::fs

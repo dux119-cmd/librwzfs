@@ -14,6 +14,7 @@ struct route {
   std::shared_ptr<const archive::backend> backend;  // null when mounted without an archive
   std::string rel;                                   // archive-relative text, "" for the mount root
   std::filesystem::path absolute;                    // normalized absolute archive path
+  std::filesystem::path overlay;                     // overlay directory for writes (may be empty)
 };
 
 // True if p is absolute and at or under archive_root(). Pure.
@@ -22,7 +23,8 @@ struct route {
 // Registers a mountpoint. Returns false unless is_valid_mountpoint(p).
 // If no archive working directory is set, it becomes the mountpoint.
 [[nodiscard]] bool add(const std::filesystem::path& mountpoint,
-                       std::shared_ptr<const archive::backend> backend = nullptr);
+                       std::shared_ptr<const archive::backend> backend = nullptr,
+                       std::filesystem::path overlay = {});
 
 // Removes all mountpoints and the archive working directory.
 void clear();

@@ -4,7 +4,7 @@
 
 #include "rwzfs/archive/backend.hpp"
 #include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/walk.hpp"
+#include "rwzfs/fs/resolve.hpp"
 
 namespace rwzfs::fs {
 
@@ -24,19 +24,9 @@ std::optional<path>& cwd_slot() {
 
 }  // namespace
 
-path resolve(const path& p) {
-  if (p.is_absolute()) {
-    return walk_lexically(p);
-  }
-  const auto base = cwd::archive_cwd();
-  if (!base) {
-    return p;
-  }
-  return walk_lexically(*base / p);
-}
-
 void change_directory(const path& p, std::error_code& ec) {
-  const auto target = resolve(p);
+  const auto target = resolve(p, ec);
+  if (ec) return;
   if (const auto r = mounts::find(target)) {
     if (!r->backend) {
       ec = std::make_error_code(std::errc::not_supported);

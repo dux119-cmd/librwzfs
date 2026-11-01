@@ -38,8 +38,17 @@
 - `is_empty` is true for a directory with no children and for a zero-length file.
 - `read_symlink` returns `EINVAL` for non-links and `ENOTSUP` for links, since targets are not readable yet.
 
+## Symlinks
+- `resolve()` (`include/rwzfs/fs/resolve.hpp`) walks a path one component at a time. A symlink inside the archive is followed before the next component, as the OS does. So `NESTLINK/../FILE.DAT` is correct when `NESTLINK` is a directory link.
+- Absolute targets restart the walk from `/`. Relative targets continue from the link's directory.
+- A target that leaves the archive (for example `/etc/x`, or `../../x` from the root) becomes a host path. The rest of the path goes to the OS unchanged.
+- At most 5 links are followed per path. A sixth fails with `ELOOP`. This is `kMaxSymlinkFollows`. Raise it only if real use needs more.
+- A dangling link resolves to its missing target, so queries report `ENOENT`.
+- Follow policy: status-style calls follow the final link (`stat`, `open`, `exists`, `is_regular_file`, `is_directory`). Link-level calls do not (`is_symlink`, `read_symlink`, `unlink`, `rename`, `remove`, `rmdir`, `mkdir`, `create_directory`). `resolve_no_follow` is for these.
+- Directory entries follow their own symlinks for `status`, `is_directory`, `is_regular_file`, and `file_size`, as `std::filesystem::directory_entry` does. `is_symlink` does not follow.
+- Host symlinks are followed by the OS, not by the archive code. A host symlink that points into `/rwz` is not followed into the archive.
+
 ## Limitations
-- Symlinks inside an archive are reported as symlinks and are not followed. `open` on one returns `ENOTSUP`.
 - `directory_iterator` and `recursive_directory_iterator` are not supported for archive paths. They return standard library iterator types, which cannot represent archive entries. A new iterator type is needed.
 - `last_write_time` and `space` are not supported for archive paths, since entries carry no timestamps.
 - Archive reads are read-only. Overlay writes are not implemented.

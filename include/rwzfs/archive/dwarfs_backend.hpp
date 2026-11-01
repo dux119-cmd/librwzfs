@@ -22,6 +22,7 @@ class dwarfs_backend final : public backend {
   [[nodiscard]] std::optional<entry> lookup(std::string_view rel) const override;
   [[nodiscard]] std::size_t read(std::uint64_t inode, char* buf, std::size_t count,
                                  std::uint64_t offset, std::error_code& ec) const override;
+  [[nodiscard]] std::optional<std::string> link_target(std::string_view rel) const override;
   [[nodiscard]] std::optional<std::vector<child>> list(std::string_view rel) const override;
 
  private:

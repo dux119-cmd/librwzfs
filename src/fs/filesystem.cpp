@@ -127,12 +127,6 @@ path canonical(const path& in, std::error_code& ec) {
   return stdfs::canonical(p, ec);
 }
 
-stdfs::directory_iterator directory_iterator(const path& in, std::error_code& ec) {
-  const auto p = resolve(in);
-  if (routed(p)) { unsupported(ec); return {}; }
-  return stdfs::directory_iterator(p, ec);
-}
-
 bool is_empty(const path& in, std::error_code& ec) {
   const auto p = resolve(in);
   if (const auto r = archive_route(p)) {
@@ -216,8 +210,9 @@ path read_symlink(const path& in, std::error_code& ec) {
       ec = std::make_error_code(std::errc::invalid_argument);
       return {};
     }
-    unsupported(ec);  // link targets are not readable yet
-    return {};
+    const auto target = r->backend->link_target(r->rel);
+    if (!target) { unsupported(ec); return {}; }
+    return path(*target);
   }
   return stdfs::read_symlink(p, ec);
 }
@@ -232,13 +227,6 @@ stdfs::space_info space(const path& in, std::error_code& ec) {
   const auto p = resolve(in);
   if (routed(p)) { unsupported(ec); return {}; }
   return stdfs::space(p, ec);
-}
-
-stdfs::recursive_directory_iterator recursive_directory_iterator(const path& in,
-                                                                 std::error_code& ec) {
-  const auto p = resolve(in);
-  if (routed(p)) { unsupported(ec); return {}; }
-  return stdfs::recursive_directory_iterator(p, ec);
 }
 
 path proximate(const path& in, const path& base, std::error_code& ec) {

@@ -42,6 +42,9 @@ class backend {
   [[nodiscard]] virtual std::size_t read(std::uint64_t inode, char* buf, std::size_t count,
                                          std::uint64_t offset, std::error_code& ec) const = 0;
 
+  // Target text of a symlink, or nullopt if `rel` is not a readable symlink.
+  [[nodiscard]] virtual std::optional<std::string> link_target(std::string_view rel) const = 0;
+
   // Children of a directory, or nullopt if `rel` is not a directory.
   [[nodiscard]] virtual std::optional<std::vector<child>> list(std::string_view rel) const = 0;
 };

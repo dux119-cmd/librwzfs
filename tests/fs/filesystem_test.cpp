@@ -92,7 +92,7 @@ TEST_F(FsPassthrough, DirectoryIteratorMatchesStd) {
   auto it = rfs::directory_iterator(dir_.path(), ec);
   EXPECT_FALSE(ec);
   std::size_t count = 0;
-  for (; it != fs::directory_iterator{}; ++it) ++count;
+  for (; it != rfs::directory_iterator{}; ++it) ++count;
   EXPECT_EQ(count, 1u);
 }
 
@@ -144,7 +144,7 @@ TEST_F(FsPassthrough, RecursiveDirectoryIteratorMatchesStd) {
   std::error_code ec;
   std::size_t count = 0;
   for (auto it = rfs::recursive_directory_iterator(dir_.path(), ec);
-       it != fs::recursive_directory_iterator{}; ++it) {
+       it != rfs::recursive_directory_iterator{}; ++it) {
     ++count;
   }
   EXPECT_EQ(count, 3u);  // file.txt, sub, sub/inner.txt

@@ -44,6 +44,7 @@ add_library(rwzfs
   src/fs/path.cpp
   src/fs/archive_path.cpp
   src/fs/filesystem.cpp
+  src/fs/directory.cpp
   src/fs/mount_table.cpp
   src/fs/cwd.cpp
   src/fs/walk.cpp
@@ -88,6 +89,7 @@ if(RWZFS_BUILD_TESTS)
     tests/io/archive_io_test.cpp
     tests/fs/archive_fs_test.cpp
     tests/fs/archive_fs_queries_test.cpp
+    tests/fs/directory_test.cpp
     tests/io/stdio_archive_test.cpp
     tests/archive/dwarfs_archive_test.cpp
     tests/fs/walk_test.cpp)

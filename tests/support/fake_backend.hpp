@@ -52,6 +52,14 @@ class fake_backend final : public rwzfs::archive::backend {
     return n;
   }
 
+  [[nodiscard]] std::optional<std::string> link_target(std::string_view rel) const override {
+    const auto it = index_.find(std::string(rel));
+    if (it == index_.end() || nodes_[it->second].type != rwzfs::archive::kind::symlink) {
+      return std::nullopt;
+    }
+    return nodes_[it->second].content;
+  }
+
   [[nodiscard]] std::optional<std::vector<rwzfs::archive::child>> list(
       std::string_view rel) const override {
     const auto it = index_.find(std::string(rel));

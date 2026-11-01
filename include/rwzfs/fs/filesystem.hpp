@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <system_error>
 
+#include "rwzfs/fs/directory.hpp"
 #include "rwzfs/fs/path.hpp"
 
 namespace rwzfs::fs {
@@ -26,9 +27,7 @@ void copy(const path& from, const path& to, std::filesystem::copy_options option
 [[nodiscard]] path absolute(const path& p, std::error_code& ec);
 // FS-08 (9x)
 [[nodiscard]] path canonical(const path& p, std::error_code& ec);
-// FS-09 (7x)
-[[nodiscard]] std::filesystem::directory_iterator directory_iterator(const path& p,
-                                                                    std::error_code& ec);
+// FS-09 (7x): directory_iterator and FS-18: recursive_directory_iterator are classes in directory.hpp.
 // FS-10 (6x)
 [[nodiscard]] bool is_empty(const path& p, std::error_code& ec);
 // FS-11 (5x)
@@ -47,9 +46,6 @@ void current_path(const path& p, std::error_code& ec);
 [[nodiscard]] bool create_directory(const path& p, std::error_code& ec);
 // FS-17 (2x)
 [[nodiscard]] std::filesystem::space_info space(const path& p, std::error_code& ec);
-// FS-18 (1x)
-[[nodiscard]] std::filesystem::recursive_directory_iterator recursive_directory_iterator(
-    const path& p, std::error_code& ec);
 // FS-19 (1x)
 [[nodiscard]] path proximate(const path& p, const path& base, std::error_code& ec);
 // FS-20 (1x)

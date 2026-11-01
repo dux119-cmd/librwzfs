@@ -76,10 +76,10 @@ TEST_F(ArchiveFsQueries, IsEmptyForFilesAndDirectories) {
   EXPECT_FALSE(ec);
 }
 
-TEST_F(ArchiveFsQueries, ReadSymlinkIsNotYetSupported) {
+TEST_F(ArchiveFsQueries, ReadSymlinkReturnsTarget) {
   std::error_code ec;
-  EXPECT_EQ(rfs::read_symlink("/rwz/LINK", ec), fs::path{});
-  EXPECT_EQ(ec, std::errc::not_supported);
+  EXPECT_EQ(rfs::read_symlink("/rwz/LINK", ec), fs::path("DIR/FILE.DAT"));
+  EXPECT_FALSE(ec);
   ec.clear();
   EXPECT_EQ(rfs::read_symlink("/rwz/DIR/FILE.DAT", ec), fs::path{});
   EXPECT_EQ(ec, std::errc::invalid_argument);
@@ -115,11 +115,9 @@ TEST_F(ArchiveFsQueries, CopyIntoArchiveIsReadOnly) {
   EXPECT_EQ(ec, std::errc::read_only_file_system);
 }
 
-TEST_F(ArchiveFsQueries, QueriesWithoutArchiveSupportStillUnsupported) {
+TEST_F(ArchiveFsQueries, LastWriteTimeIsNotSupported) {
   std::error_code ec;
   (void)rfs::last_write_time("/rwz/DIR/FILE.DAT", ec);
   EXPECT_EQ(ec, std::errc::not_supported);
-  ec.clear();
-  (void)rfs::directory_iterator("/rwz/DIR", ec);
-  EXPECT_EQ(ec, std::errc::not_supported);
+
 }

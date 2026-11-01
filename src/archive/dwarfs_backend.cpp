@@ -42,6 +42,23 @@ std::size_t dwarfs_backend::read(std::uint64_t inode, char* buf, std::size_t cou
                   static_cast<std::int64_t>(offset), ec);
 }
 
+std::optional<std::string> dwarfs_backend::link_target(std::string_view rel) const {
+  const auto dir_entry = fs_.find(rel);
+  if (!dir_entry) {
+    return std::nullopt;
+  }
+  const auto iv = dir_entry->inode();
+  if (!iv.is_symlink()) {
+    return std::nullopt;
+  }
+  std::error_code ec;
+  auto target = fs_.readlink(iv, ec);
+  if (ec) {
+    return std::nullopt;
+  }
+  return target;
+}
+
 std::optional<std::vector<child>> dwarfs_backend::list(std::string_view rel) const {
   const auto dir_entry = fs_.find(rel);
   if (!dir_entry) {

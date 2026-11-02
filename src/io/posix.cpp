@@ -21,11 +21,13 @@
 #include "rwzfs/fs/mount_table.hpp"
 #include "rwzfs/fs/resolve.hpp"
 #include "rwzfs/io/archive_io.hpp"
+#include "rwzfs/io/overlay_posix.hpp"
 
 namespace rwzfs::io::posix {
 
 namespace fs = rwzfs::fs;
 namespace aio = rwzfs::io::archive_io;
+namespace ov = rwzfs::io::overlay_posix;
 
 namespace {
 
@@ -63,14 +65,18 @@ ssize_t write(int fd, const void* buf, std::size_t count) {
 int open(const char* path, int flags, mode_t mode) {
   const auto p = resolved(path);
   if (!p) return -1;
-  if (const auto r = fs::mounts::find(*p)) return aio::open(*r, flags);
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::open(*r, flags) : ov::open(*r, flags, mode);
+  }
   return ::open(p->c_str(), flags, mode);
 }
 
 int stat(const char* path, struct stat* buf) {
   const auto p = resolved(path);
   if (!p) return -1;
-  if (const auto r = fs::mounts::find(*p)) return aio::stat(*r, buf);
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::stat(*r, buf) : ov::stat(*r, buf);
+  }
   return ::stat(p->c_str(), buf);
 }
 
@@ -89,7 +95,9 @@ off_t lseek(int fd, off_t offset, int whence) {
 int unlink(const char* path) {
   const auto p = resolved(path, false);
   if (!p) return -1;
-  if (const auto r = fs::mounts::find(*p)) return aio::reject_write(*r);
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::reject_write(*r) : ov::unlink(*r);
+  }
   return ::unlink(p->c_str());
 }
 
@@ -104,14 +112,18 @@ void* mmap(void* addr, std::size_t length, int prot, int flags, int fd, off_t of
 char* realpath(const char* path, char* out) {
   const auto p = resolved(path);
   if (!p) return nullptr;
-  if (const auto r = fs::mounts::find(*p)) return aio::realpath(*r, out);
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::realpath(*r, out) : ov::realpath(*r, out);
+  }
   return ::realpath(p->c_str(), out);
 }
 
 DIR* opendir(const char* path) {
   const auto p = resolved(path);
   if (!p) return nullptr;
-  if (const auto r = fs::mounts::find(*p)) return aio::opendir(*r);
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::opendir(*r) : ov::opendir(*r);
+  }
   return ::opendir(p->c_str());
 }
 
@@ -124,28 +136,36 @@ int closedir(DIR* dir) { return aio::is_dir(dir) ? aio::closedir(dir) : ::closed
 int mkdir(const char* path, mode_t mode) {
   const auto p = resolved(path, false);
   if (!p) return -1;
-  if (const auto r = fs::mounts::find(*p)) return aio::reject_write(*r);
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::reject_write(*r) : ov::mkdir(*r, mode);
+  }
   return ::mkdir(p->c_str(), mode);
 }
 
 int rmdir(const char* path) {
   const auto p = resolved(path, false);
   if (!p) return -1;
-  if (const auto r = fs::mounts::find(*p)) return aio::reject_write(*r);
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::reject_write(*r) : ov::rmdir(*r);
+  }
   return ::rmdir(p->c_str());
 }
 
 int truncate(const char* path, off_t length) {
   const auto p = resolved(path);
   if (!p) return -1;
-  if (const auto r = fs::mounts::find(*p)) return aio::reject_write(*r);
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::reject_write(*r) : ov::truncate(*r, length);
+  }
   return ::truncate(p->c_str(), length);
 }
 
 int access(const char* path, int mode) {
   const auto p = resolved(path);
   if (!p) return -1;
-  if (const auto r = fs::mounts::find(*p)) return aio::access(*r, mode);
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::access(*r, mode) : ov::access(*r, mode);
+  }
   return ::access(p->c_str(), mode);
 }
 

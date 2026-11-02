@@ -32,14 +32,30 @@ rwzfs::mount_archive("/data/archive.zip", "/rwz", opts);
 ## Mount table
 Each mount records its overlay directory. `route::overlay` exposes it to the wrappers.
 
-## Not yet implemented: the copy-on-write engine
-Mounting creates the overlay directory, but no write is redirected yet. Writes on archive paths still return `EROFS`. The engine needs:
-- Copy-up: on the first write to an archive file, copy it into the overlay at the same relative path.
-- Read-through: reads check the overlay first, then the archive.
-- Create, rename, delete within the archive: stored in the overlay, with whiteout markers for deletes of archive entries. Whiteout format to be decided.
-- Directory listings merge the archive and the overlay, minus whiteouts.
-- Sizes and modes: the overlay copy is authoritative once it exists.
+## Copy-on-write engine (implemented)
+Code: `include/rwzfs/overlay/cow.hpp`, `src/overlay/cow.cpp`. POSIX and stdio dispatch: `src/io/overlay_posix.cpp`, `src/io/stdio.cpp`.
+
+Overlay layout:
+- `data/<rel>`: files and directories created or copied up from the archive.
+- `whiteouts/<rel>`: marker file. The archive entry `<rel>` is deleted.
+- `opaque/<rel>`: marker file. Directory `<rel>` was recreated over a deleted archive directory, so its archive children are hidden.
+
+Behavior:
+- Reads check `data/` first, then the archive. Whiteouts and opaque markers hide archive entries below them.
+- The first write to an archive file copies its bytes into `data/` (copy-up). Truncating writes start from an empty file.
+- Writes return host file descriptors and streams on `data/`, so host `read`, `write`, `lseek`, and `fsync` work unchanged.
+- Create, unlink, rmdir, mkdir, truncate, rename (files), and recursive remove and create work on the merged view.
+- Directory listings merge archive and overlay children, minus whiteouts. Overlay entries override archive entries with the same name.
+- Routes without an overlay (for example, mounts made without a write root) stay read-only and return `EROFS`.
+- The archive is never modified.
+
+Limits:
+- Renaming a directory returns `ENOTSUP`.
+- Permissions and timestamps are not stored. `chmod`-style calls return `EROFS`, and `mkdir` ignores the mode.
+- Symlinks cannot be created in the overlay.
+- The layer trusts its inputs. Paths and the overlay location are not validated here, as required for the strict IO layer.
 
 ## Decisions to confirm
 - macOS and Windows defaults follow platform convention, not the Linux path. Confirm.
 - Stem collisions (two archives with the same stem) share an overlay directory. Decide whether to add a hash suffix.
+- Overlay directory rename support and permission storage are not implemented.

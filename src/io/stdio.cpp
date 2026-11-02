@@ -14,10 +14,12 @@
 #include "rwzfs/fs/cwd.hpp"
 #include "rwzfs/fs/mount_table.hpp"
 #include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/overlay/cow.hpp"
 
 namespace rwzfs::io::stdio {
 
 namespace fs = rwzfs::fs;
+namespace cow = rwzfs::overlay::cow;
 using rwzfs::fs::mounts::route;
 
 namespace {
@@ -115,10 +117,43 @@ std::size_t fread(void* buf, std::size_t size, std::size_t count, std::FILE* str
 }
 
 // STDIO-02
+namespace {
+
+bool mode_has(const char* mode, char c) {
+  for (const char* m = mode; *m != '\0'; ++m) {
+    if (*m == c) return true;
+  }
+  return false;
+}
+
+// Routes with an overlay: reads see the merged view, writes go to the overlay file.
+std::FILE* open_overlay_stream(const route& r, const char* mode) {
+  const auto l = cow::layer_of(r);
+  if (!has_write_intent(mode)) {
+    const auto n = cow::lookup(l);
+    if (!n) {
+      errno = ENOENT;
+      return nullptr;
+    }
+    if (n->where == cow::origin::overlay) return std::fopen(n->host.c_str(), mode);
+    return open_archive_stream(r);
+  }
+  const auto host = cow::prepare_write(l, mode_has(mode, 'w') || mode_has(mode, 'a'), false,
+                                       mode_has(mode, 'w'));
+  if (!host) {
+    errno = host.error().value();
+    return nullptr;
+  }
+  return std::fopen(host->c_str(), mode);
+}
+
+}  // namespace
+
 std::FILE* fopen(const char* path, const char* mode) {
   const auto p = resolved(path);
   if (!p) return nullptr;
   if (const auto r = fs::mounts::find(*p)) {
+    if (!r->overlay.empty()) return open_overlay_stream(*r, mode);
     if (has_write_intent(mode)) {
       errno = EROFS;
       return nullptr;
@@ -147,6 +182,18 @@ int remove(const char* path) {
   const auto p = resolved(path, false);
   if (!p) return -1;
   if (const auto r = fs::mounts::find(*p)) {
+    if (!r->overlay.empty()) {
+      const auto n = cow::lookup(cow::layer_of(*r));
+      const auto err = !n ? std::make_error_code(std::errc::no_such_file_or_directory)
+                          : n->info.type == archive::kind::directory
+                                ? cow::remove_dir(cow::layer_of(*r))
+                                : cow::remove_file(cow::layer_of(*r));
+      if (err) {
+        errno = err.value();
+        return -1;
+      }
+      return 0;
+    }
     errno = r->backend ? EROFS : ENOTSUP;
     return -1;
   }
@@ -159,13 +206,20 @@ int rename(const char* from, const char* to) {
   if (!src) return -1;
   const auto dst = resolved(to, false);
   if (!dst) return -1;
-  if (const auto r = fs::mounts::find(*src)) {
-    errno = r->backend ? EROFS : ENOTSUP;
-    return -1;
-  }
-  if (const auto r = fs::mounts::find(*dst)) {
-    errno = r->backend ? EROFS : ENOTSUP;
-    return -1;
+  const auto rs = fs::mounts::find(*src);
+  const auto rd = fs::mounts::find(*dst);
+  if (rs || rd) {
+    if (!rs || !rd || rs->overlay.empty() || rd->overlay.empty()) {
+      const auto& r = rs ? *rs : *rd;
+      errno = r.backend ? EROFS : ENOTSUP;
+      return -1;
+    }
+    const auto err = cow::rename_file(cow::layer_of(*rs), cow::layer_of(*rd));
+    if (err) {
+      errno = err.value();
+      return -1;
+    }
+    return 0;
   }
   return std::rename(src->c_str(), dst->c_str());
 }

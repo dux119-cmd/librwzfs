@@ -78,15 +78,19 @@ bool is_dir(DIR* dir) {
 
 int reject_write(const route& r) { return fail(r.backend ? EROFS : ENOTSUP); }
 
+void fill_stat(const rwzfs::archive::entry& e, struct stat* buf) {
+  std::memset(buf, 0, sizeof(*buf));
+  buf->st_mode = static_cast<mode_t>(e.mode);
+  buf->st_ino = static_cast<ino_t>(e.inode);
+  buf->st_size = static_cast<off_t>(e.size);
+  buf->st_nlink = 1;
+}
+
 int stat(const route& r, struct stat* buf) {
   if (!r.backend) return fail(ENOTSUP);
   const auto e = r.backend->lookup(r.rel);
   if (!e) return fail(ENOENT);
-  std::memset(buf, 0, sizeof(*buf));
-  buf->st_mode = static_cast<mode_t>(e->mode);
-  buf->st_ino = static_cast<ino_t>(e->inode);
-  buf->st_size = static_cast<off_t>(e->size);
-  buf->st_nlink = 1;
+  fill_stat(*e, buf);
   return 0;
 }
 
@@ -178,6 +182,32 @@ char* realpath(const route& r, char* resolved) {
   }
   std::memcpy(resolved, text.c_str(), text.size() + 1);
   return resolved;
+}
+
+DIR* register_listing(std::uint64_t self_inode, const std::vector<rwzfs::archive::child>& children) {
+  auto state = std::make_unique<open_dir>();
+  for (const char* dot : {".", ".."}) {
+    dirent d{};
+    d.d_ino = static_cast<ino_t>(self_inode);
+    d.d_type = DT_DIR;
+    std::memcpy(d.d_name, dot, std::strlen(dot) + 1);
+    state->entries.push_back(d);
+  }
+  for (const auto& c : children) {
+    if (c.name.size() >= sizeof(dirent::d_name)) {
+      errno = ENAMETOOLONG;
+      return nullptr;
+    }
+    dirent d{};
+    d.d_ino = static_cast<ino_t>(c.info.inode);
+    d.d_type = d_type_of(c.info.type);
+    std::memcpy(d.d_name, c.name.c_str(), c.name.size() + 1);
+    state->entries.push_back(d);
+  }
+  const auto key = static_cast<const void*>(state.get());
+  const std::scoped_lock lock(state_mutex());
+  dirs().emplace(key, std::move(state));
+  return reinterpret_cast<DIR*>(const_cast<void*>(key));
 }
 
 DIR* opendir(const route& r) {

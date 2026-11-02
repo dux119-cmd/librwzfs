@@ -7,6 +7,10 @@
 #include <sys/types.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "rwzfs/archive/backend.hpp"
 
 #include "rwzfs/fs/mount_table.hpp"
 
@@ -34,8 +38,15 @@ using route = rwzfs::fs::mounts::route;
 [[nodiscard]] struct dirent* readdir(DIR* dir);
 [[nodiscard]] int closedir(DIR* dir);
 
-// Mutating calls on an archive path: EROFS (read-only until overlay writes exist).
+// Mutating calls on an archive path without an overlay: EROFS.
 [[nodiscard]] int reject_write(const route& r);
+
+// Fills a struct stat from an entry (type bits included in entry.mode).
+void fill_stat(const rwzfs::archive::entry& e, struct stat* buf);
+
+// Creates a DIR handle over a listing, including "." and "..". Used for merged overlay listings.
+[[nodiscard]] DIR* register_listing(std::uint64_t self_inode,
+                                    const std::vector<rwzfs::archive::child>& children);
 
 }  // namespace rwzfs::io::archive_io
 

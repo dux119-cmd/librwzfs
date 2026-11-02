@@ -24,7 +24,8 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 | Path walk and resolution | `walk_lexically`, `resolve`, `resolve_no_follow` | Implemented, tested. Archive symlinks followed, 5-link limit (`ELOOP`). |
 | Working directory | CWD-01..05 | Implemented, tested. `chdir` verifies archive directories. |
 | Mount table | `mounts::add/find/clear` | Implemented, tested. Mounting sets the archive working directory. Each mount records its overlay directory. |
-| Overlay storage path | `mount_options`, `overlay::overlay_directory` | Implemented, tested. Creates `<write root>/<stem>-writes` at mount. Copy-on-write engine not yet implemented. See docs/overlay_design.md. |
+| Overlay storage path | `mount_options`, `overlay::overlay_directory` | Implemented, tested. Creates `<write root>/<stem>-writes` at mount. |
+| Copy-on-write engine | `overlay::cow`, overlay POSIX and stdio | Implemented, tested. Copy-up, create, unlink, mkdir, rmdir, truncate, file rename, merged listings, whiteouts and opaque markers. See docs/overlay_design.md. |
 | Archive open | `mount_archive` | Opens the dwarfs image, registers it with its mountpoint. |
 | Archive read backend | `archive::backend`, dwarfs backend | Implemented, tested against the dwarfs fixture (including symlinks). |
 | Archive descriptors, DIR handles | `archive_io` | Implemented, tested |
@@ -40,8 +41,8 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 - `CMakePresets.json` sets build and test `jobs` to 0, which uses all cores with the native build tool. Plain `cmake --build build` does not: pass `--parallel` or set `CMAKE_BUILD_PARALLEL_LEVEL`. CMake cannot set this from `CMakeLists.txt`.
 
 ## Tests
-- Standalone (no dwarfs): 247 tests pass with `-Wall -Wextra -Werror`.
-- CMake with dwarfs: 272 tests pass under CTest. Mount tests use a temporary write root, so they never write to the real user state directory. CTest rebuilds the test archive (`build/fixtures/fixture.dwarfs`, from `tests/archive/make_fixture.cmake`) before tests that need it. The archive content is fixed and listed in that file. Tests check the exact content.
+- Standalone (no dwarfs): 286 tests pass with `-Wall -Wextra -Werror`.
+- CMake with dwarfs: 311 tests pass under CTest. Mount tests use a temporary write root, so they never write to the real user state directory. CTest rebuilds the test archive (`build/fixtures/fixture.dwarfs`, from `tests/archive/make_fixture.cmake`) before tests that need it. The archive content is fixed and listed in that file. Tests check the exact content.
 - The dwarfs libraries used for testing came from upstream 0.15.5. The headers were the uploaded set (0.15.3). Key headers are identical.
 
 ## Decisions (settled)
@@ -55,10 +56,11 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 8. Overlay storage: `mount_options::write_root` is the top-level writable directory. The library creates `<stem>-writes` inside it. Default: `$XDG_STATE_HOME/rwz` when `XDG_STATE_HOME` is an absolute path, else `$HOME/.local/state/rwz` on Linux and BSD; `~/Library/Application Support/rwz` on macOS; `%LOCALAPPDATA%\rwz` on Windows. The archive stem is the file name up to its first dot. See docs/overlay_design.md.
 
 ## Remaining work (in order)
-1. **Copy-on-write engine.** Copy-up on first write, read-through, create/rename/delete with whiteouts, merged directory listings. Storage location is in place (docs/overlay_design.md). Confirm the open decisions there first.
-2. **Streaming for large archive files.** The stdio path copies whole files into memory. Check `fmemopen` on macOS and BSD before relying on it.
+1. **Directory rename and permission storage** in the overlay (currently `ENOTSUP` and `EROFS`).
+2. **Streaming for large archive files.** The stdio path copies whole archive files into memory. Check `fmemopen` on macOS and BSD before relying on it.
 3. **Windows wrappers (WIN-01..05)** and helpers not in the call list (for example `CloseHandle`, `FindClose`). Needs a Windows toolchain.
 4. **Cross-platform test matrix** (Linux, macOS, BSD, Windows).
+5. **Future feature: archive creation and revision.** A new API creates an rwz archive from a path, and creates a new revision that packs in the overlay content. Creation adds an identifier file to the archive. Revision keeps that identifier file unchanged, so the identifier stays the same. Strict IO trusts the archive and overlay paths it is given. Higher-level logic checks that an archive and its overlay correspond before mounting.
 
 ## Known limitations
 - `input_file_stream` and `output_file_stream` return failed streams for archive paths. A C++ stream cannot wrap an in-memory copy.
@@ -66,6 +68,8 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 - `ioctl` is declared with one `void*` argument. Variadic callers must be checked.
 - `getcwd` with an archive working directory and a null buffer returns `EINVAL`.
 - Archive stdio streams hold the whole file in memory.
+- Overlay: directory rename, permission and timestamp storage, and symlink creation are not implemented.
+- Overlay stem collisions: archives with the same stem share one overlay directory.
 - Archive descriptor numbers are never reused.
 - Host symlinks that point into `/rwz` are not followed into the archive.
 

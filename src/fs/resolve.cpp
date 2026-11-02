@@ -11,6 +11,7 @@
 #include "rwzfs/fs/cwd.hpp"
 #include "rwzfs/fs/mount_table.hpp"
 #include "rwzfs/fs/walk.hpp"
+#include "rwzfs/overlay/cow.hpp"
 
 namespace rwzfs::fs {
 
@@ -23,8 +24,11 @@ std::optional<std::string> archive_link_target(const std::vector<std::string>& c
   const auto p = detail::absolute_from(candidate, 0);
   const auto r = mounts::find(p);
   if (!r || !r->backend) return std::nullopt;
-  const auto e = r->backend->lookup(r->rel);
-  if (!e || e->type != archive::kind::symlink) return std::nullopt;
+  // The merged view decides: an overlay file shadows an archive symlink, and overlay entries are never links.
+  const auto n = overlay::cow::lookup(overlay::cow::layer_of(*r));
+  if (!n || n->where != overlay::cow::origin::archive || n->info.type != archive::kind::symlink) {
+    return std::nullopt;
+  }
   return r->backend->link_target(r->rel);
 }
 

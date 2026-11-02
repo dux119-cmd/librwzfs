@@ -176,8 +176,17 @@ TEST_F(DwarfsArchive, MissingFileFailsWithEnoent) {
   EXPECT_EQ(errno, ENOENT);
 }
 
-TEST_F(DwarfsArchive, WritesFailWithErofs) {
-  errno = 0;
-  EXPECT_EQ(posix::open("/rwz/DIR/FILE.DAT", O_WRONLY, 0), -1);
-  EXPECT_EQ(errno, EROFS);
+TEST_F(DwarfsArchive, WritesGoToOverlayAndLeaveArchiveUnchanged) {
+  const int fd = posix::open("/rwz/DIR/FILE.DAT", O_WRONLY, 0);
+  ASSERT_GE(fd, 0);
+  EXPECT_EQ(posix::write(fd, "P", 1), 1);
+  posix::close(fd);
+
+  const int rd = posix::open("/rwz/DIR/FILE.DAT", O_RDONLY, 0);
+  ASSERT_GE(rd, 0);
+  char buf[16] = {};
+  EXPECT_EQ(posix::read(rd, buf, sizeof(buf)), static_cast<ssize_t>(kPayloadSize));
+  EXPECT_EQ(std::string(buf, kPayloadSize), "Payload");
+  posix::close(rd);
+  EXPECT_TRUE(fs::exists(writes_.path() / "fixture-writes" / "data" / "DIR" / "FILE.DAT"));
 }

@@ -9,6 +9,7 @@
 #include "rwzfs/fs/filesystem.hpp"
 #include "rwzfs/fs/mount_table.hpp"
 #include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/overlay/cow.hpp"
 
 namespace rwzfs::fs {
 
@@ -35,28 +36,31 @@ directory_entry entry_at(const detail::archive_cursor& c) {
   return directory_entry::from_archive(c.parent_absolute / child.name, child.info);
 }
 
-// Opens an archive directory. Returns false with `ec` set when the path is not a listable directory.
+// Opens a merged (archive + overlay) directory. Returns false with `ec` set when the path is not
+// a listable directory.
 bool open_archive_listing(const mounts::route& r, detail::archive_cursor& out,
                           std::error_code& ec) {
   if (!r.backend) {
     ec = std::make_error_code(std::errc::not_supported);
     return false;
   }
-  const auto e = r.backend->lookup(r.rel);
+  const auto l = overlay::cow::layer_of(r);
+  const auto e = overlay::cow::lookup(l);
   if (!e) {
     ec = std::make_error_code(std::errc::no_such_file_or_directory);
     return false;
   }
-  if (e->type != archive::kind::directory) {
+  if (e->info.type != archive::kind::directory) {
     ec = std::make_error_code(std::errc::not_a_directory);
     return false;
   }
-  auto children = r.backend->list(r.rel);
+  auto children = overlay::cow::list(l);
   if (!children) {
     ec = std::make_error_code(std::errc::not_a_directory);
     return false;
   }
   out.backend = r.backend;
+  out.overlay = r.overlay;
   out.parent_absolute = r.absolute;
   out.parent_rel = r.rel;
   out.children = std::make_shared<const std::vector<archive::child>>(std::move(*children));
@@ -125,13 +129,13 @@ std::uintmax_t directory_entry::file_size(std::error_code& ec) const {
       ec = std::make_error_code(std::errc::not_supported);
       return 0;
     }
-    const auto e = r->backend->lookup(r->rel);
-    if (!e) {
+    const auto n = overlay::cow::lookup(overlay::cow::layer_of(*r));
+    if (!n) {
       ec = std::make_error_code(std::errc::no_such_file_or_directory);
       return 0;
     }
     ec.clear();
-    return e->size;
+    return n->info.size;
   }
   return stdfs::file_size(target, ec);
 }
@@ -268,9 +272,11 @@ recursive_directory_iterator& recursive_directory_iterator::operator++() {
   if (pending_ && entry_.is_directory(is_dir_ec)) {
     const auto& parent = stack_.back();
     const auto child_rel = join_rel(parent.parent_rel, entry_.path().filename().generic_string());
-    if (auto children = parent.backend->list(child_rel); children && !children->empty()) {
+    const auto child_layer = overlay::cow::layer{parent.backend, child_rel, parent.overlay};
+    if (auto children = overlay::cow::list(child_layer); children && !children->empty()) {
       detail::archive_cursor frame;
       frame.backend = parent.backend;
+      frame.overlay = parent.overlay;
       frame.parent_absolute = entry_.path();
       frame.parent_rel = child_rel;
       frame.children = std::make_shared<const std::vector<archive::child>>(std::move(*children));

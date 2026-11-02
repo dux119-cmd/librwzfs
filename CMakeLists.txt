@@ -70,7 +70,9 @@ add_library(rwzfs
   src/fs/walk.cpp
   src/fs/resolve.cpp
   src/io/posix.cpp
-  src/io/stdio.cpp)
+  src/io/stdio.cpp
+  src/io/overlay_posix.cpp
+  src/overlay/cow.cpp)
 target_include_directories(rwzfs
   PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
   PRIVATE ${DWARFS_PREFIX}/include)
@@ -105,6 +107,8 @@ if(RWZFS_BUILD_TESTS)
   add_executable(rwzfs_tests
     tests/fs/mount_archive_test.cpp
     tests/fs/overlay_test.cpp
+    tests/overlay/cow_test.cpp
+    tests/overlay/overlay_integration_test.cpp
     tests/fs/path_test.cpp
     tests/fs/archive_path_test.cpp
     tests/fs/filesystem_test.cpp

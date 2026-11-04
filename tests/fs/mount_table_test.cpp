@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -20,72 +21,72 @@ TEST_F(MountTable, RejectsRelativeMountpoint) {
 }
 
 TEST_F(MountTable, RejectsHostMountpointOutsideArchiveRoot) {
-  EXPECT_FALSE(mounts::add("/mnt/arch"));
-  EXPECT_FALSE(mounts::is_archive_path("/mnt/arch/x"));
+  EXPECT_FALSE(mounts::add(HOST_ROOT "mnt/arch"));
+  EXPECT_FALSE(mounts::is_archive_path(HOST_ROOT "mnt/arch/x"));
 }
 
 TEST_F(MountTable, AcceptsArchiveRootItself) {
-  EXPECT_TRUE(mounts::add("/rwz"));
-  EXPECT_TRUE(mounts::is_archive_path("/rwz"));
+  EXPECT_TRUE(mounts::add(RWZ_ROOT ""));
+  EXPECT_TRUE(mounts::is_archive_path(RWZ_ROOT ""));
 }
 
 TEST_F(MountTable, AcceptsMountUnderArchiveRoot) {
-  EXPECT_TRUE(mounts::add("/rwz/data"));
-  EXPECT_TRUE(mounts::is_archive_path("/rwz/data/a/b.txt"));
-  EXPECT_FALSE(mounts::is_archive_path("/rwz/other"));
+  EXPECT_TRUE(mounts::add(RWZ_ROOT "/data"));
+  EXPECT_TRUE(mounts::is_archive_path(RWZ_ROOT "/data/a/b.txt"));
+  EXPECT_FALSE(mounts::is_archive_path(RWZ_ROOT "/other"));
 }
 
 TEST_F(MountTable, IsValidMountpointIsPure) {
-  EXPECT_TRUE(mounts::is_valid_mountpoint("/rwz/x"));
-  EXPECT_FALSE(mounts::is_valid_mountpoint("/rwzx"));
+  EXPECT_TRUE(mounts::is_valid_mountpoint(RWZ_ROOT "/x"));
+  EXPECT_FALSE(mounts::is_valid_mountpoint(HOST_ROOT "rwzx"));
   EXPECT_FALSE(mounts::is_valid_mountpoint("rwz"));
-  EXPECT_FALSE(mounts::is_archive_path("/rwz/x"));  // validation does not register
+  EXPECT_FALSE(mounts::is_archive_path(RWZ_ROOT "/x"));  // validation does not register
 }
 
 TEST_F(MountTable, EmptyTableRoutesNothing) {
-  EXPECT_FALSE(mounts::is_archive_path("/rwz/anything"));
+  EXPECT_FALSE(mounts::is_archive_path(RWZ_ROOT "/anything"));
 }
 
 TEST_F(MountTable, SiblingWithSharedPrefixIsNotArchivePath) {
-  ASSERT_TRUE(mounts::add("/rwz"));
-  EXPECT_FALSE(mounts::is_archive_path("/rwzx/y"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
+  EXPECT_FALSE(mounts::is_archive_path(HOST_ROOT "rwzx/y"));
 }
 
 TEST_F(MountTable, DotDotThatLeavesMountIsNotArchivePath) {
-  ASSERT_TRUE(mounts::add("/rwz/data"));
-  EXPECT_FALSE(mounts::is_archive_path("/rwz/data/../other"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT "/data"));
+  EXPECT_FALSE(mounts::is_archive_path(RWZ_ROOT "/data/../other"));
 }
 
 TEST_F(MountTable, DotDotThatStaysInsideIsArchivePath) {
-  ASSERT_TRUE(mounts::add("/rwz/data"));
-  EXPECT_TRUE(mounts::is_archive_path("/rwz/data/a/../b"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT "/data"));
+  EXPECT_TRUE(mounts::is_archive_path(RWZ_ROOT "/data/a/../b"));
 }
 
 TEST_F(MountTable, RelativePathIsNeverArchivePath) {
-  ASSERT_TRUE(mounts::add("/rwz"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
   EXPECT_FALSE(mounts::is_archive_path("rwz/x"));
 }
 
 TEST_F(MountTable, ClearRemovesAllMounts) {
-  ASSERT_TRUE(mounts::add("/rwz"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
   mounts::clear();
-  EXPECT_FALSE(mounts::is_archive_path("/rwz/x"));
+  EXPECT_FALSE(mounts::is_archive_path(RWZ_ROOT "/x"));
 }
 
 TEST_F(MountTable, FirstMountBecomesArchiveCwd) {
-  ASSERT_TRUE(mounts::add("/rwz"));
-  EXPECT_EQ(rwzfs::fs::cwd::archive_cwd(), fs::path("/rwz"));
-  EXPECT_EQ(rwzfs::fs::resolve_lexical("DIR/FILE.DAT"), fs::path("/rwz/DIR/FILE.DAT"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
+  EXPECT_EQ(rwzfs::fs::cwd::archive_cwd(), fs::path(RWZ_ROOT ""));
+  EXPECT_EQ(rwzfs::fs::resolve_lexical("DIR/FILE.DAT"), fs::path(RWZ_ROOT "/DIR/FILE.DAT"));
 }
 
 TEST_F(MountTable, LaterMountKeepsExistingArchiveCwd) {
-  ASSERT_TRUE(mounts::add("/rwz"));
-  ASSERT_TRUE(mounts::add("/rwz/data"));
-  EXPECT_EQ(rwzfs::fs::cwd::archive_cwd(), fs::path("/rwz"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT "/data"));
+  EXPECT_EQ(rwzfs::fs::cwd::archive_cwd(), fs::path(RWZ_ROOT ""));
 }
 
 TEST_F(MountTable, ClearRestoresHostRelativePaths) {
-  ASSERT_TRUE(mounts::add("/rwz"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
   mounts::clear();
   EXPECT_FALSE(rwzfs::fs::cwd::archive_cwd().has_value());
   EXPECT_EQ(rwzfs::fs::resolve_lexical("x"), fs::path("x"));

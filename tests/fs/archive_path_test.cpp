@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <string>
@@ -28,16 +29,16 @@ INSTANTIATE_TEST_SUITE_P(
     SpecTable, NormalizeArchivePath,
     ::testing::Values(
         NormalizeCase{"a/b/../c", "a/c"},
-        NormalizeCase{"/a/./b//c/", "a/b/c"},
+        NormalizeCase{HOST_ROOT "a/./b//c/", "a/b/c"},
         NormalizeCase{"a/b/..", "a"},
         NormalizeCase{".", ""},
-        NormalizeCase{"/../x", "x"},
-        NormalizeCase{"/a/../../../x", "x"},
+        NormalizeCase{HOST_ROOT "../x", "x"},
+        NormalizeCase{HOST_ROOT "a/../../../x", "x"},
         NormalizeCase{"a/..", ""},
         NormalizeCase{"/", ""},
         NormalizeCase{"", ""},
         NormalizeCase{"a/b", "a/b"},
-        NormalizeCase{"/a/b", "a/b"},
+        NormalizeCase{HOST_ROOT "a/b", "a/b"},
         NormalizeCase{" a b/.hidden/\xc3\xbc.txt", " a b/.hidden/\xc3\xbc.txt"},
         NormalizeCase{"a/...b", "a/...b"}));
 
@@ -65,16 +66,16 @@ TEST(NormalizeArchivePathWindows, BackslashIsSeparator) {
 #if !defined(_WIN32)
 
 TEST(ArchiveRoot, IsMagicPrefix) {
-  EXPECT_EQ(rfs::archive_root(), fs::path("/rwz"));
+  EXPECT_EQ(rfs::archive_root(), fs::path(RWZ_ROOT ""));
 }
 
 TEST(ArchiveAbsolute, ExpandsRelativeTextUnderRoot) {
-  EXPECT_EQ(*rfs::to_archive_absolute("DIR/FILE"), fs::path("/rwz/DIR/FILE"));
-  EXPECT_EQ(*rfs::to_archive_absolute("/a/../b"), fs::path("/rwz/b"));
+  EXPECT_EQ(*rfs::to_archive_absolute("DIR/FILE"), fs::path(RWZ_ROOT "/DIR/FILE"));
+  EXPECT_EQ(*rfs::to_archive_absolute(HOST_ROOT "a/../b"), fs::path(RWZ_ROOT "/b"));
 }
 
 TEST(ArchiveAbsolute, EmptyTextIsRoot) {
-  EXPECT_EQ(*rfs::to_archive_absolute(""), fs::path("/rwz"));
+  EXPECT_EQ(*rfs::to_archive_absolute(""), fs::path(RWZ_ROOT ""));
 }
 
 TEST(ArchiveAbsolute, RelativeEscapeIsRejected) {
@@ -84,18 +85,18 @@ TEST(ArchiveAbsolute, RelativeEscapeIsRejected) {
 }
 
 TEST(ArchiveRelative, StripsRoot) {
-  EXPECT_EQ(rfs::to_archive_relative("/rwz/DIR/FILE"), std::optional<std::string>("DIR/FILE"));
+  EXPECT_EQ(rfs::to_archive_relative(RWZ_ROOT "/DIR/FILE"), std::optional<std::string>("DIR/FILE"));
 }
 
 TEST(ArchiveRelative, RootIsEmptyText) {
-  EXPECT_EQ(rfs::to_archive_relative("/rwz"), std::optional<std::string>(""));
-  EXPECT_EQ(rfs::to_archive_relative("/rwz/"), std::optional<std::string>(""));
+  EXPECT_EQ(rfs::to_archive_relative(RWZ_ROOT ""), std::optional<std::string>(""));
+  EXPECT_EQ(rfs::to_archive_relative(RWZ_ROOT "/"), std::optional<std::string>(""));
 }
 
 TEST(ArchiveRelative, OutsideRootIsNullopt) {
-  EXPECT_FALSE(rfs::to_archive_relative("/rwzx/y").has_value());
-  EXPECT_FALSE(rfs::to_archive_relative("/other").has_value());
-  EXPECT_FALSE(rfs::to_archive_relative("/rwz/a/../../x").has_value());
+  EXPECT_FALSE(rfs::to_archive_relative(HOST_ROOT "rwzx/y").has_value());
+  EXPECT_FALSE(rfs::to_archive_relative(HOST_ROOT "other").has_value());
+  EXPECT_FALSE(rfs::to_archive_relative(RWZ_ROOT "/a/../../x").has_value());
 }
 
 TEST(ArchiveRoundTrip, RelativeToAbsoluteAndBack) {

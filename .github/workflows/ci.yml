@@ -47,7 +47,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y g++-14 ninja-build pkg-config \
-            libboost-dev libboost-chrono-dev libboost-filesystem-dev libboost-process-dev \
+            libboost-dev libboost-chrono-dev libboost-filesystem-dev \
             libboost-program-options-dev libboost-thread-dev libfmt-dev libzstd-dev \
             libssl-dev libxxhash-dev libflac++-dev liblz4-dev liblzma-dev libbrotli-dev \
             libarchive-dev nlohmann-json3-dev libutfcpp-dev libjemalloc-dev \
@@ -57,7 +57,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install ninja pkg-config boost fmt zstd openssl@3 xxhash flac lz4 xz brotli \
-            libarchive nlohmann-json utf8cpp googletest jemalloc
+            libarchive nlohmann-json utf8cpp googletest jemalloc gcc@14
 
       - name: Cache dwarfs install
         id: cache-dwarfs
@@ -69,8 +69,9 @@ jobs:
       - name: Build dwarfs
         if: steps.cache-dwarfs.outputs.cache-hit != 'true'
         env:
-          CC: ${{ runner.os == 'Linux' && 'gcc-14' || 'cc' }}
-          CXX: ${{ runner.os == 'Linux' && 'g++-14' || 'c++' }}
+          # dwarfs needs std::chrono::from_stream, which Apple's libc++ lacks: use GCC 14 on macOS too.
+          CC: gcc-14
+          CXX: g++-14
         run: |
           git clone --depth 1 --branch "$DWARFS_REF" https://github.com/mhx/dwarfs.git dwarfs-src
           cmake -S dwarfs-src -B dwarfs-build -G Ninja -DCMAKE_BUILD_TYPE=Release \

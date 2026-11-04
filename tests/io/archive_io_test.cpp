@@ -1,5 +1,6 @@
 #if !defined(_WIN32)
 
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <array>
@@ -28,8 +29,8 @@ namespace rfs = rwzfs::fs;
 
 namespace {
 
-constexpr const char* kFile = "/rwz/DIR/FILE.DAT";
-constexpr const char* kDir = "/rwz/DIR";
+constexpr const char* kFile = RWZ_ROOT "/DIR/FILE.DAT";
+constexpr const char* kDir = RWZ_ROOT "/DIR";
 constexpr const char* kPayload = "payload";
 constexpr std::size_t kPayloadSize = 7;
 constexpr std::size_t kBuf = 64;
@@ -53,7 +54,7 @@ class ArchiveIo : public ::testing::Test {
     backend->add_file("DIR/FILE.DAT", kPayload);
     backend->add_dir("EMPTY");
     backend_ = backend;
-    ASSERT_TRUE(mounts::add("/rwz", backend_));
+    ASSERT_TRUE(mounts::add(RWZ_ROOT "", backend_));
   }
   void TearDown() override {
     mounts::clear();
@@ -102,7 +103,7 @@ TEST_F(ArchiveIo, SeekBeforeStartFailsWithEinval) {
 }
 
 TEST_F(ArchiveIo, RelativeOpenUnderArchiveCwd) {
-  ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwz/DIR"));
+  ASSERT_TRUE(rfs::cwd::set_archive_cwd(RWZ_ROOT "/DIR"));
   const int fd = posix::open("FILE.DAT", O_RDONLY, 0);
   ASSERT_GE(fd, 0);
   EXPECT_EQ(read_all(fd, kBuf), kPayload);
@@ -111,7 +112,7 @@ TEST_F(ArchiveIo, RelativeOpenUnderArchiveCwd) {
 
 TEST_F(ArchiveIo, OpenMissingFileFailsWithEnoent) {
   errno = 0;
-  EXPECT_EQ(posix::open("/rwz/nope", O_RDONLY, 0), -1);
+  EXPECT_EQ(posix::open(RWZ_ROOT "/nope", O_RDONLY, 0), -1);
   EXPECT_EQ(errno, ENOENT);
 }
 
@@ -126,7 +127,7 @@ TEST_F(ArchiveIo, OpenForWritingFailsWithErofs) {
   EXPECT_EQ(posix::open(kFile, O_WRONLY, 0), -1);
   EXPECT_EQ(errno, EROFS);
   errno = 0;
-  EXPECT_EQ(posix::open("/rwz/new.txt", O_RDWR | O_CREAT, 0644), -1);
+  EXPECT_EQ(posix::open(RWZ_ROOT "/new.txt", O_RDWR | O_CREAT, 0644), -1);
   EXPECT_EQ(errno, EROFS);
 }
 
@@ -186,7 +187,7 @@ TEST_F(ArchiveIo, StatDirectoryReportsDirectoryMode) {
 TEST_F(ArchiveIo, StatMissingFailsWithEnoent) {
   struct stat st{};
   errno = 0;
-  EXPECT_EQ(posix::stat("/rwz/nope", &st), -1);
+  EXPECT_EQ(posix::stat(RWZ_ROOT "/nope", &st), -1);
   EXPECT_EQ(errno, ENOENT);
 }
 
@@ -196,7 +197,7 @@ TEST_F(ArchiveIo, AccessExistenceAndWrite) {
   EXPECT_EQ(posix::access(kFile, W_OK), -1);
   EXPECT_EQ(errno, EROFS);
   errno = 0;
-  EXPECT_EQ(posix::access("/rwz/nope", F_OK), -1);
+  EXPECT_EQ(posix::access(RWZ_ROOT "/nope", F_OK), -1);
   EXPECT_EQ(errno, ENOENT);
 }
 
@@ -205,7 +206,7 @@ TEST_F(ArchiveIo, MutatingPathCallsFailWithErofs) {
   EXPECT_EQ(posix::unlink(kFile), -1);
   EXPECT_EQ(errno, EROFS);
   errno = 0;
-  EXPECT_EQ(posix::mkdir("/rwz/new", 0755), -1);
+  EXPECT_EQ(posix::mkdir(RWZ_ROOT "/new", 0755), -1);
   EXPECT_EQ(errno, EROFS);
   errno = 0;
   EXPECT_EQ(posix::rmdir(kDir), -1);
@@ -231,14 +232,14 @@ TEST_F(ArchiveIo, RealpathWithNullBufferAllocates) {
 TEST_F(ArchiveIo, RealpathMissingFailsWithEnoent) {
   std::array<char, kPathBuf> buf{};
   errno = 0;
-  EXPECT_EQ(posix::realpath("/rwz/nope", buf.data()), nullptr);
+  EXPECT_EQ(posix::realpath(RWZ_ROOT "/nope", buf.data()), nullptr);
   EXPECT_EQ(errno, ENOENT);
 }
 
 // Directories
 
 TEST_F(ArchiveIo, ReaddirListsDotEntriesAndChildren) {
-  DIR* dir = posix::opendir("/rwz");
+  DIR* dir = posix::opendir(RWZ_ROOT "");
   ASSERT_NE(dir, nullptr);
   std::set<std::string> names;
   while (const struct dirent* e = posix::readdir(dir)) {
@@ -256,28 +257,28 @@ TEST_F(ArchiveIo, OpendirOnFileFailsWithEnotdir) {
 
 TEST_F(ArchiveIo, OpendirMissingFailsWithEnoent) {
   errno = 0;
-  EXPECT_EQ(posix::opendir("/rwz/nope"), nullptr);
+  EXPECT_EQ(posix::opendir(RWZ_ROOT "/nope"), nullptr);
   EXPECT_EQ(errno, ENOENT);
 }
 
 TEST_F(ArchiveIo, GlobMatchesSortedArchivePaths) {
   glob_t matches{};
-  ASSERT_EQ(posix::glob("/rwz/*/*.DAT", 0, nullptr, &matches), 0);
+  ASSERT_EQ(posix::glob(RWZ_ROOT "/*/*.DAT", 0, nullptr, &matches), 0);
   ASSERT_EQ(matches.gl_pathc, 1u);
-  EXPECT_STREQ(matches.gl_pathv[0], "/rwz/DIR/FILE.DAT");
+  EXPECT_STREQ(matches.gl_pathv[0], RWZ_ROOT "/DIR/FILE.DAT");
   globfree(&matches);
 }
 
 TEST_F(ArchiveIo, GlobNoMatchReturnsNomatch) {
   glob_t matches{};
-  EXPECT_EQ(posix::glob("/rwz/nope*", 0, nullptr, &matches), GLOB_NOMATCH);
+  EXPECT_EQ(posix::glob(RWZ_ROOT "/nope*", 0, nullptr, &matches), GLOB_NOMATCH);
   globfree(&matches);
 }
 
 TEST_F(ArchiveIo, GlobAppendIsNotSupported) {
   glob_t matches{};
   errno = 0;
-  EXPECT_EQ(posix::glob("/rwz/*", GLOB_APPEND, nullptr, &matches), GLOB_ABORTED);
+  EXPECT_EQ(posix::glob(RWZ_ROOT "/*", GLOB_APPEND, nullptr, &matches), GLOB_ABORTED);
   EXPECT_EQ(errno, ENOTSUP);
 }
 
@@ -295,12 +296,12 @@ TEST_F(ArchiveIo, ChdirIntoFileFailsWithEnotdir) {
   errno = 0;
   EXPECT_EQ(posix::chdir(kFile), -1);
   EXPECT_EQ(errno, ENOTDIR);
-  EXPECT_EQ(rfs::cwd::archive_cwd(), std::filesystem::path("/rwz"));
+  EXPECT_EQ(rfs::cwd::archive_cwd(), std::filesystem::path(RWZ_ROOT ""));
 }
 
 TEST_F(ArchiveIo, ChdirMissingFailsWithEnoent) {
   errno = 0;
-  EXPECT_EQ(posix::chdir("/rwz/nope"), -1);
+  EXPECT_EQ(posix::chdir(RWZ_ROOT "/nope"), -1);
   EXPECT_EQ(errno, ENOENT);
 }
 

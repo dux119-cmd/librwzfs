@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -55,15 +56,15 @@ TEST_F(OverlayLock, LeftoverLockFileRefusesUntilUserRemovesIt) {
 
 TEST_F(OverlayLock, UnmountReleasesArchiveLock) {
   ASSERT_TRUE(lock::acquire(dir_.path()).has_value());
-  ASSERT_TRUE(mounts::add("/rwz", nullptr, dir_.path()));
-  const auto released = mounts::remove("/rwz");
+  ASSERT_TRUE(mounts::add(RWZ_ROOT "", nullptr, dir_.path()));
+  const auto released = mounts::remove(RWZ_ROOT "");
   ASSERT_TRUE(released.has_value());
   EXPECT_FALSE(fs::exists(dir_.path() / lock::kLockName));
 }
 
 TEST_F(OverlayLock, ClearReleasesLocksOfAllMounts) {
   ASSERT_TRUE(lock::acquire(dir_.path()).has_value());
-  ASSERT_TRUE(mounts::add("/rwz", nullptr, dir_.path()));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT "", nullptr, dir_.path()));
   mounts::clear();
   EXPECT_FALSE(fs::exists(dir_.path() / lock::kLockName));
 }

@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -32,7 +33,7 @@ ov::env_lookup env_empty() {
 TEST(OverlayStem, StripsExtensionFromFirstDot) {
   EXPECT_EQ(ov::archive_stem("archive.zip"), "archive");
   EXPECT_EQ(ov::archive_stem("fixture.dwarfs"), "fixture");
-  EXPECT_EQ(ov::archive_stem("/data/dir/x.tar.gz"), "x");
+  EXPECT_EQ(ov::archive_stem(HOST_ROOT "data/dir/x.tar.gz"), "x");
 }
 
 TEST(OverlayStem, FirstDotRuleAppliesToMultipleDots) {
@@ -49,14 +50,14 @@ TEST(OverlayStem, LeadingDotIsKept) {
 }
 
 TEST(OverlayDefaultRoot, UserStateAreaFromHome) {
-  const auto root = ov::default_write_root(env_with_home("/home/u"));
+  const auto root = ov::default_write_root(env_with_home(HOST_ROOT "home/u"));
   ASSERT_TRUE(root.has_value());
 #if defined(_WIN32)
-  EXPECT_EQ(*root, fs::path("/home/u") / "rwz");
+  EXPECT_EQ(*root, fs::path(HOST_ROOT "home/u") / "rwz");
 #elif defined(__APPLE__)
-  EXPECT_EQ(*root, fs::path("/home/u") / "Library" / "Application Support" / "rwz");
+  EXPECT_EQ(*root, fs::path(HOST_ROOT "home/u") / "Library" / "Application Support" / "rwz");
 #else
-  EXPECT_EQ(*root, fs::path("/home/u") / ".local" / "state" / "rwz");
+  EXPECT_EQ(*root, fs::path(HOST_ROOT "home/u") / ".local" / "state" / "rwz");
 #endif
 }
 
@@ -72,27 +73,27 @@ ov::env_lookup env_with(std::optional<std::string> xdg, std::optional<std::strin
 }  // namespace
 
 TEST(OverlayDefaultRoot, AbsoluteXdgStateHomeIsUsed) {
-  const auto root = ov::default_write_root(env_with("/xdg/state", "/home/u"));
+  const auto root = ov::default_write_root(env_with(HOST_ROOT "xdg/state", HOST_ROOT "home/u"));
   ASSERT_TRUE(root.has_value());
-  EXPECT_EQ(*root, fs::path("/xdg/state") / "rwz");
+  EXPECT_EQ(*root, fs::path(HOST_ROOT "xdg/state") / "rwz");
 }
 
 TEST(OverlayDefaultRoot, RelativeXdgStateHomeIsIgnored) {
-  const auto root = ov::default_write_root(env_with("relative/state", "/home/u"));
+  const auto root = ov::default_write_root(env_with("relative/state", HOST_ROOT "home/u"));
   ASSERT_TRUE(root.has_value());
-  EXPECT_EQ(*root, fs::path("/home/u") / ".local" / "state" / "rwz");
+  EXPECT_EQ(*root, fs::path(HOST_ROOT "home/u") / ".local" / "state" / "rwz");
 }
 
 TEST(OverlayDefaultRoot, UnsetXdgStateHomeFallsBackToHome) {
-  const auto root = ov::default_write_root(env_with(std::nullopt, "/home/u"));
+  const auto root = ov::default_write_root(env_with(std::nullopt, HOST_ROOT "home/u"));
   ASSERT_TRUE(root.has_value());
-  EXPECT_EQ(*root, fs::path("/home/u") / ".local" / "state" / "rwz");
+  EXPECT_EQ(*root, fs::path(HOST_ROOT "home/u") / ".local" / "state" / "rwz");
 }
 
 TEST(OverlayDefaultRoot, XdgStateHomeWithoutHomeStillWorks) {
-  const auto root = ov::default_write_root(env_with("/xdg/state", std::nullopt));
+  const auto root = ov::default_write_root(env_with(HOST_ROOT "xdg/state", std::nullopt));
   ASSERT_TRUE(root.has_value());
-  EXPECT_EQ(*root, fs::path("/xdg/state") / "rwz");
+  EXPECT_EQ(*root, fs::path(HOST_ROOT "xdg/state") / "rwz");
 }
 #endif
 
@@ -103,25 +104,25 @@ TEST(OverlayDefaultRoot, MissingHomeIsReported) {
 }
 
 TEST(OverlayDirectory, DefaultRootUsesStemWritesSubdirectory) {
-  const auto dir = ov::overlay_directory("/a/archive.zip", std::nullopt, env_with_home("/home/u"));
+  const auto dir = ov::overlay_directory(HOST_ROOT "a/archive.zip", std::nullopt, env_with_home(HOST_ROOT "home/u"));
   ASSERT_TRUE(dir.has_value());
   EXPECT_EQ(dir->filename(), "archive-writes");
-  EXPECT_EQ(dir->parent_path(), *ov::default_write_root(env_with_home("/home/u")));
+  EXPECT_EQ(dir->parent_path(), *ov::default_write_root(env_with_home(HOST_ROOT "home/u")));
 }
 
 TEST(OverlayDirectory, SpecifiedRootIsTopLevelWritePath) {
-  const auto dir = ov::overlay_directory("/data/archive.zip", fs::path("/srv/wr"), env_empty());
+  const auto dir = ov::overlay_directory(HOST_ROOT "data/archive.zip", fs::path(HOST_ROOT "srv/wr"), env_empty());
   ASSERT_TRUE(dir.has_value());
-  EXPECT_EQ(*dir, fs::path("/srv/wr/archive-writes"));
+  EXPECT_EQ(*dir, fs::path(HOST_ROOT "srv/wr/archive-writes"));
 }
 
 TEST(OverlayDirectory, SpecifiedRootDoesNotNeedHome) {
-  const auto dir = ov::overlay_directory("fixture.dwarfs", fs::path("/srv/wr"), env_empty());
+  const auto dir = ov::overlay_directory("fixture.dwarfs", fs::path(HOST_ROOT "srv/wr"), env_empty());
   EXPECT_TRUE(dir.has_value());
 }
 
 TEST(OverlayDirectory, RelativeRootIsRejected) {
-  const auto dir = ov::overlay_directory("archive.zip", fs::path("relative/wr"), env_with_home("/h"));
+  const auto dir = ov::overlay_directory("archive.zip", fs::path("relative/wr"), env_with_home(HOST_ROOT "h"));
   ASSERT_FALSE(dir.has_value());
   EXPECT_EQ(dir.error(), ov::overlay_error::write_root_relative);
 }

@@ -39,6 +39,7 @@ class Flatten : public ::testing::Test {
   std::shared_ptr<fake_backend> backend_;
 };
 
+#if !defined(_WIN32)  // creating symlinks needs privileges on Windows
 TEST_F(Flatten, ArchiveWithoutChangesIsReproduced) {
   ASSERT_FALSE(rwzfs::overlay::flatten(at(""), out_.path()));
   EXPECT_EQ(read_text(out_.path() / "DIR" / "FILE.DAT"), "payload");
@@ -46,6 +47,8 @@ TEST_F(Flatten, ArchiveWithoutChangesIsReproduced) {
   EXPECT_TRUE(fs::is_symlink(out_.path() / "LINK"));
   EXPECT_EQ(fs::read_symlink(out_.path() / "LINK"), fs::path("DIR/FILE.DAT"));
 }
+
+#endif
 
 TEST_F(Flatten, OverlayChangesAreFlattenedAndArchiveUntouched) {
   // Modify, delete, create, rename a directory, and set a mode.

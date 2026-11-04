@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -20,7 +21,7 @@ class ArchiveFs : public ::testing::Test {
     rfs::cwd::clear();
     auto backend = std::make_shared<fake_backend>();
     backend->add_file("DIR/FILE.DAT", "payload");
-    ASSERT_TRUE(mounts::add("/rwz", backend));
+    ASSERT_TRUE(mounts::add(RWZ_ROOT "", backend));
   }
   void TearDown() override {
     mounts::clear();
@@ -30,9 +31,9 @@ class ArchiveFs : public ::testing::Test {
 
 TEST_F(ArchiveFs, ExistsForFileAndMissing) {
   std::error_code ec;
-  EXPECT_TRUE(rfs::exists("/rwz/DIR/FILE.DAT", ec));
+  EXPECT_TRUE(rfs::exists(RWZ_ROOT "/DIR/FILE.DAT", ec));
   EXPECT_FALSE(ec);
-  EXPECT_FALSE(rfs::exists("/rwz/nope", ec));
+  EXPECT_FALSE(rfs::exists(RWZ_ROOT "/nope", ec));
   EXPECT_FALSE(ec);
 }
 
@@ -44,58 +45,58 @@ TEST_F(ArchiveFs, ExistsRelativeAfterMount) {
 
 TEST_F(ArchiveFs, StatusReportsTypeAndPermissions) {
   std::error_code ec;
-  const auto file = rfs::status("/rwz/DIR/FILE.DAT", ec);
+  const auto file = rfs::status(RWZ_ROOT "/DIR/FILE.DAT", ec);
   EXPECT_FALSE(ec);
   EXPECT_EQ(file.type(), fs::file_type::regular);
   EXPECT_EQ(file.permissions(), fs::perms::owner_read | fs::perms::owner_write |
                                     fs::perms::group_read | fs::perms::others_read);
-  const auto dir = rfs::status("/rwz/DIR", ec);
+  const auto dir = rfs::status(RWZ_ROOT "/DIR", ec);
   EXPECT_EQ(dir.type(), fs::file_type::directory);
 }
 
 TEST_F(ArchiveFs, StatusMissingMatchesStdNotFound) {
   std::error_code ec;
-  const auto st = rfs::status("/rwz/nope", ec);
+  const auto st = rfs::status(RWZ_ROOT "/nope", ec);
   EXPECT_EQ(st.type(), fs::file_type::not_found);
   EXPECT_EQ(ec, std::errc::no_such_file_or_directory);
 }
 
 TEST_F(ArchiveFs, IsRegularFileAndIsDirectory) {
   std::error_code ec;
-  EXPECT_TRUE(rfs::is_regular_file("/rwz/DIR/FILE.DAT", ec));
-  EXPECT_FALSE(rfs::is_directory("/rwz/DIR/FILE.DAT", ec));
-  EXPECT_TRUE(rfs::is_directory("/rwz/DIR", ec));
-  EXPECT_FALSE(rfs::is_regular_file("/rwz/DIR", ec));
+  EXPECT_TRUE(rfs::is_regular_file(RWZ_ROOT "/DIR/FILE.DAT", ec));
+  EXPECT_FALSE(rfs::is_directory(RWZ_ROOT "/DIR/FILE.DAT", ec));
+  EXPECT_TRUE(rfs::is_directory(RWZ_ROOT "/DIR", ec));
+  EXPECT_FALSE(rfs::is_regular_file(RWZ_ROOT "/DIR", ec));
   EXPECT_FALSE(ec);
 }
 
 TEST_F(ArchiveFs, IsRegularFileMissingReportsEnoent) {
   std::error_code ec;
-  EXPECT_FALSE(rfs::is_regular_file("/rwz/nope", ec));
+  EXPECT_FALSE(rfs::is_regular_file(RWZ_ROOT "/nope", ec));
   EXPECT_EQ(ec, std::errc::no_such_file_or_directory);
 }
 
 TEST_F(ArchiveFs, MutatingWrappersReportReadOnly) {
   std::error_code ec;
-  EXPECT_EQ(rfs::remove_all("/rwz/DIR", ec), 0u);
+  EXPECT_EQ(rfs::remove_all(RWZ_ROOT "/DIR", ec), 0u);
   EXPECT_EQ(ec, std::errc::read_only_file_system);
 }
 
 TEST_F(ArchiveFs, ChangeDirectoryVerifiesArchiveDirectory) {
   std::error_code ec;
-  rfs::current_path(fs::path("/rwz/DIR"), ec);
+  rfs::current_path(fs::path(RWZ_ROOT "/DIR"), ec);
   EXPECT_FALSE(ec);
-  EXPECT_EQ(rfs::current_path(ec), fs::path("/rwz/DIR"));
+  EXPECT_EQ(rfs::current_path(ec), fs::path(RWZ_ROOT "/DIR"));
   EXPECT_TRUE(rfs::exists("FILE.DAT", ec));
 }
 
 TEST_F(ArchiveFs, ChangeDirectoryRejectsFileAndMissing) {
   std::error_code ec;
-  rfs::current_path(fs::path("/rwz/DIR/FILE.DAT"), ec);
+  rfs::current_path(fs::path(RWZ_ROOT "/DIR/FILE.DAT"), ec);
   EXPECT_EQ(ec, std::errc::not_a_directory);
-  EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path("/rwz"));
+  EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path(RWZ_ROOT ""));
   ec.clear();
-  rfs::current_path(fs::path("/rwz/nope"), ec);
+  rfs::current_path(fs::path(RWZ_ROOT "/nope"), ec);
   EXPECT_EQ(ec, std::errc::no_such_file_or_directory);
 }
 
@@ -104,17 +105,17 @@ TEST(MountRouting, LongestMountpointWins) {
   auto outer = std::make_shared<fake_backend>();
   auto inner = std::make_shared<fake_backend>();
   inner->add_file("x", "inner");
-  ASSERT_TRUE(mounts::add("/rwz", outer));
-  ASSERT_TRUE(mounts::add("/rwz/data", inner));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT "", outer));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT "/data", inner));
 
-  const auto r = mounts::find("/rwz/data/x");
+  const auto r = mounts::find(RWZ_ROOT "/data/x");
   ASSERT_TRUE(r.has_value());
   EXPECT_EQ(r->backend, std::static_pointer_cast<const rwzfs::archive::backend>(inner));
   EXPECT_EQ(r->rel, "x");
 
-  const auto root = mounts::find("/rwz/other");
+  const auto root = mounts::find(RWZ_ROOT "/other");
   ASSERT_TRUE(root.has_value());
   EXPECT_EQ(root->rel, "other");
-  EXPECT_FALSE(mounts::find("/host/x").has_value());
+  EXPECT_FALSE(mounts::find(HOST_ROOT "host/x").has_value());
   mounts::clear();
 }

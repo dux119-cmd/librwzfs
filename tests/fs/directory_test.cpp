@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -44,7 +45,7 @@ class ArchiveListing : public ::testing::Test {
     backend->add_file("DIR/SUB/inner.txt", "x");
     backend->add_dir("DIR/EMPTYSUB");
     backend->add_file("EMPTY.TXT", "");
-    ASSERT_TRUE(mounts::add("/rwz", backend));
+    ASSERT_TRUE(mounts::add(RWZ_ROOT "", backend));
   }
   void TearDown() override {
     mounts::clear();
@@ -55,7 +56,7 @@ class ArchiveListing : public ::testing::Test {
 TEST_F(ArchiveListing, ListsChildrenWithoutDotEntries) {
   std::error_code ec;
   std::set<std::string> names;
-  for (const auto& e : rfs::directory_iterator(fs::path("/rwz/DIR"), ec)) {
+  for (const auto& e : rfs::directory_iterator(fs::path(RWZ_ROOT "/DIR"), ec)) {
     names.insert(e.path().filename().string());
   }
   EXPECT_FALSE(ec);
@@ -64,11 +65,11 @@ TEST_F(ArchiveListing, ListsChildrenWithoutDotEntries) {
 
 TEST_F(ArchiveListing, EntriesHaveAbsolutePathsAndMetadata) {
   std::error_code ec;
-  rfs::directory_iterator it(fs::path("/rwz/DIR"), ec);
+  rfs::directory_iterator it(fs::path(RWZ_ROOT "/DIR"), ec);
   ASSERT_FALSE(ec);
   for (; it != rfs::directory_iterator{}; ++it) {
     if (it->path().filename() == "FILE.DAT") {
-      EXPECT_EQ(it->path(), fs::path("/rwz/DIR/FILE.DAT"));
+      EXPECT_EQ(it->path(), fs::path(RWZ_ROOT "/DIR/FILE.DAT"));
       EXPECT_TRUE(it->is_regular_file(ec));
       EXPECT_FALSE(it->is_directory(ec));
       EXPECT_EQ(it->file_size(ec), 7u);
@@ -82,14 +83,14 @@ TEST_F(ArchiveListing, EntriesHaveAbsolutePathsAndMetadata) {
 
 TEST_F(ArchiveListing, EmptyDirectoryEqualsEnd) {
   std::error_code ec;
-  rfs::directory_iterator it(fs::path("/rwz/DIR/EMPTYSUB"), ec);
+  rfs::directory_iterator it(fs::path(RWZ_ROOT "/DIR/EMPTYSUB"), ec);
   EXPECT_FALSE(ec);
   EXPECT_TRUE(it == rfs::directory_iterator{});
 }
 
 TEST_F(ArchiveListing, PostfixIncrementAdvancesThroughAllEntries) {
   std::error_code ec;
-  rfs::directory_iterator it(fs::path("/rwz/DIR"), ec);
+  rfs::directory_iterator it(fs::path(RWZ_ROOT "/DIR"), ec);
   std::size_t count = 0;
   while (it != rfs::directory_iterator{}) {
     it++;
@@ -100,29 +101,29 @@ TEST_F(ArchiveListing, PostfixIncrementAdvancesThroughAllEntries) {
 
 TEST_F(ArchiveListing, MissingDirectoryReportsEnoent) {
   std::error_code ec;
-  rfs::directory_iterator it(fs::path("/rwz/nope"), ec);
+  rfs::directory_iterator it(fs::path(RWZ_ROOT "/nope"), ec);
   EXPECT_EQ(ec, std::errc::no_such_file_or_directory);
   EXPECT_TRUE(it == rfs::directory_iterator{});
 }
 
 TEST_F(ArchiveListing, FileReportsEnotdir) {
   std::error_code ec;
-  rfs::directory_iterator it(fs::path("/rwz/DIR/FILE.DAT"), ec);
+  rfs::directory_iterator it(fs::path(RWZ_ROOT "/DIR/FILE.DAT"), ec);
   EXPECT_EQ(ec, std::errc::not_a_directory);
 }
 
 TEST_F(ArchiveListing, RelativeListingUsesArchiveCwd) {
-  ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwz/DIR"));
+  ASSERT_TRUE(rfs::cwd::set_archive_cwd(RWZ_ROOT "/DIR"));
   std::error_code ec;
   rfs::directory_iterator it(fs::path("."), ec);
   ASSERT_FALSE(ec);
-  EXPECT_EQ(it->path().parent_path(), fs::path("/rwz/DIR"));
+  EXPECT_EQ(it->path().parent_path(), fs::path(RWZ_ROOT "/DIR"));
 }
 
 TEST_F(ArchiveListing, RecursiveVisitsTreeWithDepths) {
   std::error_code ec;
   std::set<std::pair<std::string, int>> seen;
-  rfs::recursive_directory_iterator it(fs::path("/rwz/DIR"), ec);
+  rfs::recursive_directory_iterator it(fs::path(RWZ_ROOT "/DIR"), ec);
   ASSERT_FALSE(ec);
   for (; it != rfs::recursive_directory_iterator{}; ++it) {
     seen.insert({it->path().filename().string(), it.depth()});
@@ -134,7 +135,7 @@ TEST_F(ArchiveListing, RecursiveVisitsTreeWithDepths) {
 TEST_F(ArchiveListing, DisableRecursionSkipsSubtree) {
   std::error_code ec;
   std::set<std::string> seen;
-  rfs::recursive_directory_iterator it(fs::path("/rwz/DIR"), ec);
+  rfs::recursive_directory_iterator it(fs::path(RWZ_ROOT "/DIR"), ec);
   for (; it != rfs::recursive_directory_iterator{}; ++it) {
     seen.insert(it->path().filename().string());
     if (it->path().filename() == "SUB") it.disable_recursion_pending();
@@ -146,7 +147,7 @@ TEST_F(ArchiveListing, DisableRecursionSkipsSubtree) {
 TEST_F(ArchiveListing, RangeForWorksWithAuto) {
   std::error_code ec;
   std::size_t count = 0;
-  for (const auto& e : rfs::directory_iterator(fs::path("/rwz"), ec)) {
+  for (const auto& e : rfs::directory_iterator(fs::path(RWZ_ROOT ""), ec)) {
     (void)e;
     ++count;
   }
@@ -156,9 +157,9 @@ TEST_F(ArchiveListing, RangeForWorksWithAuto) {
 TEST(DirectoryNoBackend, ListingWithoutBackendIsNotSupported) {
   mounts::clear();
   rfs::cwd::clear();
-  ASSERT_TRUE(mounts::add("/rwz"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
   std::error_code ec;
-  rfs::directory_iterator it(fs::path("/rwz/DIR"), ec);
+  rfs::directory_iterator it(fs::path(RWZ_ROOT "/DIR"), ec);
   EXPECT_EQ(ec, std::errc::not_supported);
   mounts::clear();
 }

@@ -1,5 +1,6 @@
 #if !defined(_WIN32)
 
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <cerrno>
@@ -27,8 +28,8 @@ namespace mounts = rwzfs::fs::mounts;
 namespace posix = rwzfs::io::posix;
 
 namespace {
-constexpr const char* kFile = "/rwz/DIR/FILE.DAT";
-constexpr const char* kDir = "/rwz/DIR";
+constexpr const char* kFile = RWZ_ROOT "/DIR/FILE.DAT";
+constexpr const char* kDir = RWZ_ROOT "/DIR";
 constexpr std::int64_t kStamp = 1700000000;
 }  // namespace
 
@@ -39,7 +40,7 @@ class OverlayMetadata : public ::testing::Test {
     rfs::cwd::clear();
     backend_ = std::make_shared<fake_backend>();
     backend_->add_file("DIR/FILE.DAT", "payload");
-    ASSERT_TRUE(mounts::add("/rwz", backend_, overlay_.path()));
+    ASSERT_TRUE(mounts::add(RWZ_ROOT "", backend_, overlay_.path()));
   }
   void TearDown() override {
     mounts::clear();

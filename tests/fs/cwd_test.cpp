@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -20,8 +21,8 @@ class CwdTest : public ::testing::Test {
     original_ = fs::current_path();
     mounts::clear();
     rfs::cwd::clear();
-    ASSERT_TRUE(mounts::add("/rwz"));
-    ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwz/sub"));
+    ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
+    ASSERT_TRUE(rfs::cwd::set_archive_cwd(RWZ_ROOT "/sub"));
   }
   void TearDown() override {
     rfs::cwd::clear();
@@ -38,7 +39,7 @@ class CwdTest : public ::testing::Test {
 
 TEST(CwdResolve, AbsoluteUnchangedWithoutArchiveCwd) {
   rfs::cwd::clear();
-  EXPECT_EQ(rfs::resolve_lexical("/abs/x"), fs::path("/abs/x"));
+  EXPECT_EQ(rfs::resolve_lexical(HOST_ROOT "abs/x"), fs::path(HOST_ROOT "abs/x"));
 }
 
 TEST(CwdResolve, RelativeUnchangedWithoutArchiveCwd) {
@@ -47,20 +48,20 @@ TEST(CwdResolve, RelativeUnchangedWithoutArchiveCwd) {
 }
 
 TEST_F(CwdTest, RelativeResolvesAgainstArchiveCwd) {
-  EXPECT_EQ(rfs::resolve_lexical("x"), fs::path("/rwz/sub/x"));
+  EXPECT_EQ(rfs::resolve_lexical("x"), fs::path(RWZ_ROOT "/sub/x"));
 }
 
 TEST_F(CwdTest, DotAndDotDotNormalizeLexically) {
-  EXPECT_EQ(rfs::resolve_lexical("./a/../b"), fs::path("/rwz/sub/b"));
-  EXPECT_EQ(rfs::resolve_lexical("."), fs::path("/rwz/sub"));
+  EXPECT_EQ(rfs::resolve_lexical("./a/../b"), fs::path(RWZ_ROOT "/sub/b"));
+  EXPECT_EQ(rfs::resolve_lexical("."), fs::path(RWZ_ROOT "/sub"));
 }
 
 TEST_F(CwdTest, DotDotCanLeaveArchiveToHostPath) {
-  EXPECT_EQ(rfs::resolve_lexical("../../host/x"), fs::path("/host/x"));
+  EXPECT_EQ(rfs::resolve_lexical("../../host/x"), fs::path(HOST_ROOT "host/x"));
 }
 
 TEST_F(CwdTest, AbsoluteIgnoresArchiveCwd) {
-  EXPECT_EQ(rfs::resolve_lexical("/abs/x"), fs::path("/abs/x"));
+  EXPECT_EQ(rfs::resolve_lexical(HOST_ROOT "abs/x"), fs::path(HOST_ROOT "abs/x"));
 }
 
 // CWD-05 / CWD-01 / CWD-02: state
@@ -68,9 +69,9 @@ TEST_F(CwdTest, AbsoluteIgnoresArchiveCwd) {
 TEST(CwdState, SetRejectsPathOutsideMount) {
   mounts::clear();
   rfs::cwd::clear();
-  ASSERT_TRUE(mounts::add("/rwz"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
   rfs::cwd::clear();
-  EXPECT_FALSE(rfs::cwd::set_archive_cwd("/elsewhere"));
+  EXPECT_FALSE(rfs::cwd::set_archive_cwd(HOST_ROOT "elsewhere"));
   EXPECT_FALSE(rfs::cwd::archive_cwd().has_value());
   mounts::clear();
 }
@@ -78,7 +79,7 @@ TEST(CwdState, SetRejectsPathOutsideMount) {
 TEST(CwdState, SetRejectsRelativePath) {
   mounts::clear();
   rfs::cwd::clear();
-  ASSERT_TRUE(mounts::add("/rwz"));
+  ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
   rfs::cwd::clear();
   EXPECT_FALSE(rfs::cwd::set_archive_cwd("sub"));
   EXPECT_FALSE(rfs::cwd::archive_cwd().has_value());
@@ -87,15 +88,15 @@ TEST(CwdState, SetRejectsRelativePath) {
 
 TEST_F(CwdTest, CurrentPathReturnsArchiveCwd) {
   std::error_code ec;
-  EXPECT_EQ(rfs::current_path(ec), fs::path("/rwz/sub"));
+  EXPECT_EQ(rfs::current_path(ec), fs::path(RWZ_ROOT "/sub"));
   EXPECT_FALSE(ec);
 }
 
 TEST_F(CwdTest, ArchiveTargetIsRejectedAndCwdUnchanged) {
   std::error_code ec;
-  rfs::current_path(fs::path("/rwz/other"), ec);
+  rfs::current_path(fs::path(RWZ_ROOT "/other"), ec);
   EXPECT_EQ(ec, std::errc::not_supported);
-  EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path("/rwz/sub"));
+  EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path(RWZ_ROOT "/sub"));
 }
 
 TEST_F(CwdTest, HostTargetClearsArchiveCwd) {
@@ -117,12 +118,12 @@ TEST_F(CwdTest, RelativeHostChdirWorksAfterClear) {
 
 TEST_F(CwdTest, AbsoluteIsLexicalUnderArchiveCwd) {
   std::error_code ec;
-  EXPECT_EQ(rfs::absolute(fs::path("x/../y"), ec), fs::path("/rwz/sub/y"));
+  EXPECT_EQ(rfs::absolute(fs::path("x/../y"), ec), fs::path(RWZ_ROOT "/sub/y"));
   EXPECT_FALSE(ec);
 }
 
 TEST_F(CwdTest, ArchiveRootIsReachableByPrefix) {
-  EXPECT_TRUE(rfs::cwd::set_archive_cwd("/rwz"));
-  EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path("/rwz"));
-  EXPECT_EQ(rfs::resolve_lexical("x"), fs::path("/rwz/x"));
+  EXPECT_TRUE(rfs::cwd::set_archive_cwd(RWZ_ROOT ""));
+  EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path(RWZ_ROOT ""));
+  EXPECT_EQ(rfs::resolve_lexical("x"), fs::path(RWZ_ROOT "/x"));
 }

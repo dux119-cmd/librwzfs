@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -27,16 +28,16 @@ class MountArchive : public ::testing::Test {
 };
 
 TEST_F(MountArchive, MissingArchiveIsReported) {
-  EXPECT_EQ(rwzfs::mount_archive(fs::path("/does/not/exist.dwarfs"), "/rwz", options()),
+  EXPECT_EQ(rwzfs::mount_archive(fs::path(HOST_ROOT "does/not/exist.dwarfs"), RWZ_ROOT "", options()),
             rwzfs::MountError::ArchiveNotFound);
-  EXPECT_FALSE(mounts::is_archive_path("/rwz/x"));
+  EXPECT_FALSE(mounts::is_archive_path(RWZ_ROOT "/x"));
 }
 
 TEST_F(MountArchive, InvalidMountpointIsReportedBeforeOpening) {
   TempDir dir;
   const auto archive = dir.path() / "garbage.dwarfs";
   std::ofstream(archive) << "not a dwarfs image";
-  EXPECT_EQ(rwzfs::mount_archive(archive, "/mnt/outside", options()),
+  EXPECT_EQ(rwzfs::mount_archive(archive, HOST_ROOT "mnt/outside", options()),
             rwzfs::MountError::MountPointInvalid);
 }
 
@@ -44,14 +45,14 @@ TEST_F(MountArchive, GarbageImageFailsToOpen) {
   TempDir dir;
   const auto archive = dir.path() / "garbage.dwarfs";
   std::ofstream(archive) << "not a dwarfs image";
-  EXPECT_EQ(rwzfs::mount_archive(archive, "/rwz", options()), rwzfs::MountError::OpenFailed);
-  EXPECT_FALSE(mounts::is_archive_path("/rwz/x"));
+  EXPECT_EQ(rwzfs::mount_archive(archive, RWZ_ROOT "", options()), rwzfs::MountError::OpenFailed);
+  EXPECT_FALSE(mounts::is_archive_path(RWZ_ROOT "/x"));
 }
 
 TEST_F(MountArchive, RelativeWriteRootIsRejected) {
   rwzfs::mount_options o;
   o.write_root = fs::path("relative/writes");
-  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", o), rwzfs::MountError::WriteRootInvalid);
+  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, RWZ_ROOT "", o), rwzfs::MountError::WriteRootInvalid);
 }
 
 TEST_F(MountArchive, WriteRootBelowRegularFileIsUnavailable) {
@@ -59,30 +60,30 @@ TEST_F(MountArchive, WriteRootBelowRegularFileIsUnavailable) {
   std::ofstream(blocker) << "x";
   rwzfs::mount_options o;
   o.write_root = blocker / "sub";
-  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", o),
+  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, RWZ_ROOT "", o),
             rwzfs::MountError::WriteRootUnavailable);
 }
 
 TEST_F(MountArchive, FixtureMountCreatesOverlayDirectoryNamedFromStem) {
-  ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", options()), rwzfs::MountError::None);
+  ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive, RWZ_ROOT "", options()), rwzfs::MountError::None);
   // kFixtureArchive is ".../fixture.dwarfs", so the stem is "fixture".
   const auto expected = writes_.path() / "fixture-writes";
   EXPECT_TRUE(fs::is_directory(expected));
-  const auto r = mounts::find(fs::path("/rwz/DIR/FILE.DAT"));
+  const auto r = mounts::find(fs::path(RWZ_ROOT "/DIR/FILE.DAT"));
   ASSERT_TRUE(r.has_value());
   EXPECT_EQ(r->overlay, expected);
 }
 
 TEST_F(MountArchive, SecondMountOfSameArchiveIsInUse) {
-  ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", options()), rwzfs::MountError::None);
-  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz/second", options()),
+  ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive, RWZ_ROOT "", options()), rwzfs::MountError::None);
+  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, RWZ_ROOT "/second", options()),
             rwzfs::MountError::ArchiveInUse);
 }
 
 TEST_F(MountArchive, UnmountReleasesLockSoRemountSucceeds) {
-  ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", options()), rwzfs::MountError::None);
+  ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive, RWZ_ROOT "", options()), rwzfs::MountError::None);
   EXPECT_TRUE(fs::exists(writes_.path() / "fixture-writes" / ".rwz.lock"));
-  EXPECT_TRUE(rwzfs::unmount_archive("/rwz"));
+  EXPECT_TRUE(rwzfs::unmount_archive(RWZ_ROOT ""));
   EXPECT_FALSE(fs::exists(writes_.path() / "fixture-writes" / ".rwz.lock"));
-  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", options()), rwzfs::MountError::None);
+  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, RWZ_ROOT "", options()), rwzfs::MountError::None);
 }

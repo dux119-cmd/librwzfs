@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <cerrno>
@@ -17,7 +18,7 @@ namespace mounts = rwzfs::fs::mounts;
 namespace rfs = rwzfs::fs;
 
 namespace {
-constexpr const char* kArchiveFile = "/rwz/a.txt";
+constexpr const char* kArchiveFile = RWZ_ROOT "/a.txt";
 constexpr std::size_t kBuf = 16;
 }  // namespace
 
@@ -26,7 +27,7 @@ class StdioIo : public ::testing::Test {
   void SetUp() override {
     mounts::clear();
     rfs::cwd::clear();
-    ASSERT_TRUE(mounts::add("/rwz"));
+    ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
     file_ = dir_.path() / "file.txt";
     std::ofstream(file_) << "hello";
   }
@@ -57,7 +58,7 @@ TEST_F(StdioIo, FopenArchivePathFailsWithEnotsup) {
 }
 
 TEST_F(StdioIo, FopenRelativeUnderArchiveCwdFailsWithEnotsup) {
-  ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwz/sub"));
+  ASSERT_TRUE(rfs::cwd::set_archive_cwd(RWZ_ROOT "/sub"));
   errno = 0;
   EXPECT_EQ(stdio::fopen("x.txt", "rb"), nullptr);
   EXPECT_EQ(errno, ENOTSUP);

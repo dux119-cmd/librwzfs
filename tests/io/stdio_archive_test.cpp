@@ -1,5 +1,6 @@
 #if !defined(_WIN32)
 
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <cerrno>
@@ -17,8 +18,8 @@ namespace mounts = rwzfs::fs::mounts;
 namespace rfs = rwzfs::fs;
 
 namespace {
-constexpr const char* kFile = "/rwz/DIR/FILE.DAT";
-constexpr const char* kEmpty = "/rwz/EMPTY.TXT";
+constexpr const char* kFile = RWZ_ROOT "/DIR/FILE.DAT";
+constexpr const char* kEmpty = RWZ_ROOT "/EMPTY.TXT";
 constexpr std::size_t kPayloadSize = 7;
 }  // namespace
 
@@ -30,7 +31,7 @@ class StdioArchive : public ::testing::Test {
     auto backend = std::make_shared<fake_backend>();
     backend->add_file("DIR/FILE.DAT", "payload");
     backend->add_file("EMPTY.TXT", "");
-    ASSERT_TRUE(mounts::add("/rwz", backend));
+    ASSERT_TRUE(mounts::add(RWZ_ROOT "", backend));
   }
   void TearDown() override {
     mounts::clear();
@@ -59,11 +60,20 @@ TEST_F(StdioArchive, EmptyFileReadsNothing) {
   EXPECT_EQ(stdio::fclose(fp), 0);
 }
 
-TEST_F(StdioArchive, ArchiveStreamIsReadOnly) {
+TEST_F(StdioArchive, WritesNeverReachTheArchive) {
+  // Writing to the stream may fail (glibc) or succeed in the stream's private copy (macOS
+  // fmemopen). Either way the archive must keep its content.
   std::FILE* fp = stdio::fopen(kFile, "rb");
   ASSERT_NE(fp, nullptr);
-  EXPECT_EQ(std::fwrite("x", 1, 1, fp), 0u);
+  std::fwrite("x", 1, 1, fp);
   EXPECT_EQ(stdio::fclose(fp), 0);
+
+  std::FILE* again = stdio::fopen(kFile, "rb");
+  ASSERT_NE(again, nullptr);
+  char buf[8] = {};
+  EXPECT_EQ(stdio::fread(buf, 1, sizeof(buf), again), kPayloadSize);
+  EXPECT_EQ(std::string(buf, kPayloadSize), "payload");
+  stdio::fclose(again);
 }
 
 TEST_F(StdioArchive, WriteModesFailWithErofs) {
@@ -76,18 +86,18 @@ TEST_F(StdioArchive, WriteModesFailWithErofs) {
 
 TEST_F(StdioArchive, MissingFileFailsWithEnoent) {
   errno = 0;
-  EXPECT_EQ(stdio::fopen("/rwz/nope", "rb"), nullptr);
+  EXPECT_EQ(stdio::fopen(RWZ_ROOT "/nope", "rb"), nullptr);
   EXPECT_EQ(errno, ENOENT);
 }
 
 TEST_F(StdioArchive, DirectoryFailsWithEisdir) {
   errno = 0;
-  EXPECT_EQ(stdio::fopen("/rwz/DIR", "rb"), nullptr);
+  EXPECT_EQ(stdio::fopen(RWZ_ROOT "/DIR", "rb"), nullptr);
   EXPECT_EQ(errno, EISDIR);
 }
 
 TEST_F(StdioArchive, RelativeFopenUnderArchiveCwd) {
-  ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwz/DIR"));
+  ASSERT_TRUE(rfs::cwd::set_archive_cwd(RWZ_ROOT "/DIR"));
   std::FILE* fp = stdio::fopen("FILE.DAT", "rb");
   ASSERT_NE(fp, nullptr);
   char buf[8] = {};
@@ -100,7 +110,7 @@ TEST_F(StdioArchive, RemoveAndRenameOnArchiveFailWithErofs) {
   EXPECT_EQ(stdio::remove(kFile), -1);
   EXPECT_EQ(errno, EROFS);
   errno = 0;
-  EXPECT_EQ(stdio::rename(kFile, "/rwz/other"), -1);
+  EXPECT_EQ(stdio::rename(kFile, RWZ_ROOT "/other"), -1);
   EXPECT_EQ(errno, EROFS);
 }
 

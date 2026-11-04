@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -8,7 +9,7 @@ namespace fs = std::filesystem;
 
 TEST(RevisionName, FirstRevisionAppendsRev1) {
   EXPECT_EQ(rwzfs::next_revision_name("archive.dwarfs"), "archive-rev1.dwarfs");
-  EXPECT_EQ(rwzfs::next_revision_name(fs::path("/data/archive.dwarfs")), "archive-rev1.dwarfs");
+  EXPECT_EQ(rwzfs::next_revision_name(fs::path(HOST_ROOT "data/archive.dwarfs")), "archive-rev1.dwarfs");
 }
 
 TEST(RevisionName, RevisionBumpsExistingNumber) {

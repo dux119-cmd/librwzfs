@@ -1,5 +1,6 @@
 #if !defined(_WIN32)
 
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <array>
@@ -33,8 +34,8 @@ constexpr std::size_t kReadBuf = 16;
 constexpr std::size_t kTinyBuf = 4;
 constexpr std::size_t kPathBuf = 4096;
 constexpr std::size_t kHelloSize = 5;
-constexpr const char* kArchiveFile = "/rwz/a.txt";
-constexpr const char* kArchiveDir = "/rwz/sub";
+constexpr const char* kArchiveFile = RWZ_ROOT "/a.txt";
+constexpr const char* kArchiveDir = RWZ_ROOT "/sub";
 
 std::string read_fd(int fd, std::size_t n) {
   std::string out(n, '\0');
@@ -51,7 +52,7 @@ class PosixIo : public ::testing::Test {
     original_ = fs::current_path();
     mounts::clear();
     rfs::cwd::clear();
-    ASSERT_TRUE(mounts::add("/rwz"));
+    ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
     file_ = dir_.path() / "file.txt";
     std::ofstream(file_) << "hello";
   }
@@ -178,7 +179,7 @@ TEST_F(PosixIo, MkdirAndRmdirHostDirectory) {
 
 TEST_F(PosixIo, MkdirArchivePathFailsWithEnotsup) {
   errno = 0;
-  EXPECT_EQ(posix::mkdir("/rwz/new", 0700), -1);
+  EXPECT_EQ(posix::mkdir(RWZ_ROOT "/new", 0700), -1);
   EXPECT_EQ(errno, ENOTSUP);
 }
 
@@ -222,7 +223,7 @@ TEST_F(PosixIo, OpendirReadsEntriesThenCloses) {
 
 TEST_F(PosixIo, OpendirArchivePathFailsWithEnotsup) {
   errno = 0;
-  EXPECT_EQ(posix::opendir("/rwz"), nullptr);
+  EXPECT_EQ(posix::opendir(RWZ_ROOT ""), nullptr);
   EXPECT_EQ(errno, ENOTSUP);
 }
 
@@ -251,7 +252,7 @@ TEST_F(PosixIo, GlobHostPatternMatches) {
 TEST_F(PosixIo, GlobArchivePatternAbortsWithEnotsup) {
   glob_t matches{};
   errno = 0;
-  EXPECT_EQ(posix::glob("/rwz/*.txt", 0, nullptr, &matches), GLOB_ABORTED);
+  EXPECT_EQ(posix::glob(RWZ_ROOT "/*.txt", 0, nullptr, &matches), GLOB_ABORTED);
   EXPECT_EQ(errno, ENOTSUP);
 }
 
@@ -289,7 +290,7 @@ TEST_F(PosixIo, GetcwdNullBufferWithArchiveCwdFailsWithEinval) {
 TEST_F(PosixIo, ChdirIntoArchiveFailsWithEnotsup) {
   ASSERT_TRUE(rfs::cwd::set_archive_cwd(kArchiveDir));
   errno = 0;
-  EXPECT_EQ(posix::chdir("/rwz/other"), -1);
+  EXPECT_EQ(posix::chdir(RWZ_ROOT "/other"), -1);
   EXPECT_EQ(errno, ENOTSUP);
   EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path(kArchiveDir));
 }

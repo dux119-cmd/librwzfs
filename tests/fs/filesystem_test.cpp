@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -200,13 +201,13 @@ class FsRouting : public ::testing::Test {
   void SetUp() override {
     mounts::clear();
     rfs::cwd::clear();
-    ASSERT_TRUE(mounts::add("/rwz"));
+    ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
   }
   void TearDown() override { mounts::clear();
     rfs::cwd::clear(); }
 
-  const fs::path inside_ = "/rwz/a/b.txt";
-  const fs::path other_ = "/rwzfs-test-other/b.txt";
+  const fs::path inside_ = RWZ_ROOT "/a/b.txt";
+  const fs::path other_ = HOST_ROOT "rwzfs-test-other/b.txt";
 };
 
 TEST_F(FsRouting, EveryWrapperRejectsArchivePath) {
@@ -321,13 +322,13 @@ TEST_F(FsRouting, RelativePathsStillPassThrough) {
 
 TEST_F(FsRouting, AbsoluteIsLexicalForArchivePaths) {
   std::error_code ec;
-  EXPECT_EQ(rfs::absolute(fs::path("/rwz/a/../b"), ec),
-            fs::path("/rwz/b"));
+  EXPECT_EQ(rfs::absolute(fs::path(RWZ_ROOT "/a/../b"), ec),
+            fs::path(RWZ_ROOT "/b"));
   EXPECT_FALSE(ec);
 }
 
 TEST_F(FsRouting, RelativePathsRouteWhenArchiveCwdIsSet) {
-  ASSERT_TRUE(rfs::cwd::set_archive_cwd("/rwz/sub"));
+  ASSERT_TRUE(rfs::cwd::set_archive_cwd(RWZ_ROOT "/sub"));
   std::error_code ec;
   EXPECT_FALSE(rfs::exists("file.txt", ec));
   EXPECT_EQ(ec, std::errc::not_supported);
@@ -337,5 +338,5 @@ TEST_F(FsRouting, RelativePathsRouteAfterMount) {
   std::error_code ec;
   EXPECT_FALSE(rfs::exists("DIR/FILE.DAT", ec));
   EXPECT_EQ(ec, std::errc::not_supported);
-  EXPECT_EQ(rfs::resolve_lexical("DIR/FILE.DAT"), fs::path("/rwz/DIR/FILE.DAT"));
+  EXPECT_EQ(rfs::resolve_lexical("DIR/FILE.DAT"), fs::path(RWZ_ROOT "/DIR/FILE.DAT"));
 }

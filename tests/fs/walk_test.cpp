@@ -1,3 +1,4 @@
+#include "../support/platform_paths.hpp"
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -14,22 +15,22 @@ TEST(Walk, RelativeIsUnchanged) {
 }
 
 TEST(Walk, HostAbsoluteKeepsDotDotForOs) {
-  EXPECT_EQ(rfs::walk_lexically("/abs/x/../y"), fs::path("/abs/x/../y"));
+  EXPECT_EQ(rfs::walk_lexically(HOST_ROOT "abs/x/../y"), fs::path(HOST_ROOT "abs/x/../y"));
 }
 
 #if !defined(_WIN32)
 
 TEST(Walk, ArchiveDotDotIsAppliedLexically) {
-  EXPECT_EQ(rfs::walk_lexically("/rwz/sub/./a/../b"), fs::path("/rwz/sub/b"));
+  EXPECT_EQ(rfs::walk_lexically(RWZ_ROOT "/sub/./a/../b"), fs::path(RWZ_ROOT "/sub/b"));
 }
 
 TEST(Walk, ArchiveRootDotDotLeavesToHost) {
-  EXPECT_EQ(rfs::walk_lexically("/rwz/.."), fs::path("/"));
+  EXPECT_EQ(rfs::walk_lexically(RWZ_ROOT "/.."), fs::path("/"));
 }
 
 TEST(Walk, EscapeFromArchiveKeepsRestRaw) {
-  EXPECT_EQ(rfs::walk_lexically("/rwz/sub/../../host/x"), fs::path("/host/x"));
-  EXPECT_EQ(rfs::walk_lexically("/rwz/../link/../x"), fs::path("/link/../x"));
+  EXPECT_EQ(rfs::walk_lexically(RWZ_ROOT "/sub/../../host/x"), fs::path(HOST_ROOT "host/x"));
+  EXPECT_EQ(rfs::walk_lexically(RWZ_ROOT "/../link/../x"), fs::path(HOST_ROOT "link/../x"));
 }
 
 TEST(Walk, HostSymlinkDotDotIsFollowed) {

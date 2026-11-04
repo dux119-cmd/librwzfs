@@ -23,6 +23,12 @@ namespace detail {
 [[nodiscard]] std::filesystem::path absolute_from(const std::vector<std::string>& parts,
                                                   std::size_t from);
 
+// Host path for components[from..] after leaving the archive root: keeps the root's drive on
+// Windows ("C:/RWZ" -> "C:/host/x"), otherwise an absolute POSIX path.
+[[nodiscard]] std::filesystem::path host_absolute(const std::vector<std::string>& root,
+                                                  const std::vector<std::string>& parts,
+                                                  std::size_t from);
+
 [[nodiscard]] bool has_prefix(const std::vector<std::string>& parts,
                               const std::vector<std::string>& prefix);
 

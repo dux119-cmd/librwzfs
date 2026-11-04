@@ -15,6 +15,7 @@ TEST(CreateArchive, MissingSourceIsReported) {
   EXPECT_FALSE(fs::exists(dir.path() / "out.dwarfs"));
 }
 
+#if !defined(_WIN32)  // creation is POSIX only for now
 TEST(CreateArchive, MissingToolIsReportedAndLeavesNoOutput) {
   TempDir dir;
   rwzfs::create_options options;
@@ -25,6 +26,8 @@ TEST(CreateArchive, MissingToolIsReportedAndLeavesNoOutput) {
   EXPECT_FALSE(fs::exists(dir.path() / "out.dwarfs"));
   EXPECT_FALSE(fs::exists(dir.path() / "out.dwarfs.tmp"));
 }
+
+#endif
 
 TEST(CreateArchive, DefaultCompressionMatchesCliSpec) {
   EXPECT_STREQ(rwzfs::kDefaultCompression, "zstd:level=12:wlog=27:strat=3");

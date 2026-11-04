@@ -60,7 +60,8 @@ stdfs::path resolve_components(const stdfs::path& input, std::error_code& ec, bo
       }
       // Climbs above the archive root: the rest is a host path, passed raw.
       ec.clear();
-      return detail::absolute_from(std::vector<std::string>(pending.begin(), pending.end()), 0);
+      const std::vector<std::string> rest(pending.begin(), pending.end());
+      return detail::host_absolute(root, rest, 0);
     }
 
     auto candidate = out;

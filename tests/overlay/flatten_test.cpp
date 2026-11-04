@@ -29,7 +29,9 @@ class Flatten : public ::testing::Test {
     backend_->add_file("DIR/FILE.DAT", "payload");
     backend_->add_file("DIR/SUB/inner.txt", "x");
     backend_->add_file("ROOT.TXT", "root");
+#if !defined(_WIN32)
     backend_->add_symlink("LINK", "DIR/FILE.DAT");
+#endif
   }
 
   cow::layer at(const std::string& rel) const { return cow::layer{backend_, rel, overlay_.path()}; }

@@ -38,6 +38,17 @@ stdfs::path absolute_from(const std::vector<std::string>& parts, std::size_t fro
   return stdfs::path(text.empty() ? "/" : text);
 }
 
+stdfs::path host_absolute(const std::vector<std::string>& root, const std::vector<std::string>& parts,
+                          std::size_t from) {
+  const bool drive = !root.empty() && root.front().find(':') != std::string::npos;
+  std::string text = drive ? root.front() + "/" : "/";
+  for (std::size_t i = from; i < parts.size(); ++i) {
+    if (i > from) text.push_back('/');
+    text += parts[i];
+  }
+  return stdfs::path(text);
+}
+
 bool has_prefix(const std::vector<std::string>& parts, const std::vector<std::string>& prefix) {
   return parts.size() >= prefix.size() &&
          std::equal(prefix.begin(), prefix.end(), parts.begin());
@@ -65,10 +76,7 @@ stdfs::path walk_lexically(const stdfs::path& p) {
         out.pop_back();
         continue;
       }
-      return detail::absolute_from(
-          std::vector<std::string>(tokens.begin() + static_cast<std::ptrdiff_t>(i) + 1,
-                                   tokens.end()),
-          0);  // leaves the archive: the rest is a host path
+      return detail::host_absolute(root, tokens, i + 1);  // leaves the archive: the rest is a host path
     }
     out.push_back(token);
   }

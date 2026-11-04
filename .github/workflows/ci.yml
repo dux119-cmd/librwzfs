@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Library without dwarfs: builds and tests on every platform. Covers the path, host IO,
+  # overlay, lock, creation and revision logic. Archive mounting is compiled out.
+  unit:
+    name: unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DRWZFS_WITH_DWARFS=OFF -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure --parallel
+
+  # Full library with dwarfs built from source (Linux and macOS). Windows is not included yet:
+  # the dwarfs Windows build has not been verified.
+  full:
+    name: full (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      DWARFS_REF: v0.15.5
+      DWARFS_PREFIX: ${{ github.workspace }}/dwarfs-install
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 ninja-build pkg-config \
+            libboost-dev libboost-chrono-dev libboost-filesystem-dev libboost-process-dev \
+            libboost-program-options-dev libboost-thread-dev libfmt-dev libzstd-dev \
+            libssl-dev libxxhash-dev libflac++-dev liblz4-dev liblzma-dev libbrotli-dev \
+            libarchive-dev nlohmann-json3-dev libutfcpp-dev libjemalloc-dev \
+            libgtest-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ninja pkg-config boost fmt zstd openssl@3 xxhash flac lz4 xz brotli \
+            libarchive nlohmann-json utf8cpp googletest jemalloc
+
+      - name: Cache dwarfs install
+        id: cache-dwarfs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DWARFS_PREFIX }}
+          key: dwarfs-${{ matrix.os }}-${{ env.DWARFS_REF }}
+
+      - name: Build dwarfs
+        if: steps.cache-dwarfs.outputs.cache-hit != 'true'
+        env:
+          CC: ${{ runner.os == 'Linux' && 'gcc-14' || 'cc' }}
+          CXX: ${{ runner.os == 'Linux' && 'g++-14' || 'c++' }}
+        run: |
+          git clone --depth 1 --branch "$DWARFS_REF" https://github.com/mhx/dwarfs.git dwarfs-src
+          cmake -S dwarfs-src -B dwarfs-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
+            -DWITH_TESTS=OFF -DWITH_FUSE_DRIVER=OFF -DWITH_DESKTOP_INTEGRATION=OFF \
+            -DWITH_MAN_PAGES=OFF -DWITH_MAN_OPTION=OFF -DWITH_TOOLS=ON -DWITH_LIBDWARFS=ON \
+            -DCMAKE_INSTALL_PREFIX="$DWARFS_PREFIX"
+          cmake --build dwarfs-build --parallel
+          cmake --install dwarfs-build
+
+      - name: Configure rwzfs
+        run: cmake -S . -B build -DDWARFS_PREFIX="$DWARFS_PREFIX" -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure --parallel

@@ -48,7 +48,7 @@ MountError mount_archive(const stdfs::path& archive, const stdfs::path& mountpoi
   }
   try {
     auto backend = std::make_shared<archive::dwarfs_backend>(archive);
-    if (!rwzfs::fs::mounts::add(mountpoint, std::move(backend), *overlay_dir)) {
+    if (!rwzfs::fs::mounts::add(mountpoint, std::move(backend), *overlay_dir, archive)) {
       overlay::lock::release(*overlay_dir);
       return MountError::MountPointInvalid;
     }
@@ -71,7 +71,8 @@ std::string to_string(MountError error) {
     case MountError::OpenFailed: return "failed to open archive";
     case MountError::WriteRootInvalid: return "write root must be an absolute path";
     case MountError::WriteRootUnavailable: return "overlay directory could not be created";
-    case MountError::ArchiveInUse: return "archive is already open (overlay lock held)";
+    case MountError::ArchiveInUse:
+      return "archive is in use: only one instance is allowed. If no other instance is running, delete the lock file .rwz.lock in the overlay directory and try again";
   }
   return "unknown";
 }

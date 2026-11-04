@@ -21,6 +21,7 @@
 #include "rwzfs/fs/cwd.hpp"
 #include "rwzfs/fs/mount_table.hpp"
 #include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/io/archive_glob.hpp"
 #include "rwzfs/io/archive_io.hpp"
 #include "rwzfs/io/overlay_posix.hpp"
 
@@ -215,10 +216,7 @@ int chdir(const char* path) {
 int glob(const char* pattern, int flags, int (*errfunc)(const char*, int), glob_t* out) {
   const auto p = resolved(pattern);
   if (!p) return GLOB_ABORTED;
-  if (fs::mounts::is_archive_path(*p)) {
-    errno = ENOTSUP;
-    return GLOB_ABORTED;
-  }
+  if (fs::mounts::is_archive_path(*p)) return archive_glob::glob(*p, flags, out);
   return ::glob(p->c_str(), flags, errfunc, out);
 }
 

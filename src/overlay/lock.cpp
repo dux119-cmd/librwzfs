@@ -11,6 +11,7 @@
 #if !defined(_WIN32)
 #include <csignal>
 #include <cerrno>
+#include <cstdio>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -68,12 +69,6 @@ void forget(const std::string& path) {
 
 #if !defined(_WIN32)
 
-bool owner_alive(long pid) {
-  if (pid <= 0) return false;
-  if (::kill(static_cast<pid_t>(pid), 0) == 0) return true;
-  return errno == EPERM;  // exists, owned by someone else
-}
-
 void unlink_all_held() noexcept {
   for (std::size_t i = 0; i < kMaxHeld; ++i) {
     if (slots()[i].used) ::unlink(slots()[i].path);
@@ -106,31 +101,21 @@ std::expected<void, lock_error> acquire(const stdfs::path& overlay_dir) {
 
   const auto path = (overlay_dir / kLockName).string();
   const std::scoped_lock lock(held_mutex());
-  for (int attempt = 0; attempt < 2; ++attempt) {
-    const int fd = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0644);
-    if (fd >= 0) {
-      const auto text = std::to_string(static_cast<long>(::getpid())) + "\n";
-      const bool wrote = ::write(fd, text.data(), text.size()) == static_cast<ssize_t>(text.size());
-      ::close(fd);
-      if (!wrote) {
-        ::unlink(path.c_str());
-        return std::unexpected(lock_error::io);
-      }
-      record(path);
-      return {};
-    }
-    if (errno != EEXIST) return std::unexpected(lock_error::io);
-
-    std::FILE* in = std::fopen(path.c_str(), "r");
-    long pid = 0;
-    if (in != nullptr) {
-      if (std::fscanf(in, "%ld", &pid) != 1) pid = 0;
-      std::fclose(in);
-    }
-    if (owner_alive(pid)) return std::unexpected(lock_error::in_use);
-    ::unlink(path.c_str());  // stale: its owner is gone
+  // The lock file is a breadcrumb honored by this library: while it exists, the archive is
+  // refused. A crashed process leaves it behind; the user removes it to continue.
+  const int fd = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0644);
+  if (fd < 0) {
+    return std::unexpected(errno == EEXIST ? lock_error::in_use : lock_error::io);
   }
-  return std::unexpected(lock_error::in_use);
+  const auto text = std::to_string(static_cast<long>(::getpid())) + "\n";
+  const bool wrote = ::write(fd, text.data(), text.size()) == static_cast<ssize_t>(text.size());
+  ::close(fd);
+  if (!wrote) {
+    ::unlink(path.c_str());
+    return std::unexpected(lock_error::io);
+  }
+  record(path);
+  return {};
 #endif
 }
 

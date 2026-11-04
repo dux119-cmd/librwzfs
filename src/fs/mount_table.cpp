@@ -19,6 +19,7 @@ struct mount_entry {
   fs::path mountpoint;
   std::shared_ptr<const archive::backend> backend;
   fs::path overlay;
+  fs::path archive;
 };
 
 std::mutex& table_mutex() {
@@ -43,14 +44,14 @@ bool is_valid_mountpoint(const fs::path& p) {
 }
 
 bool add(const fs::path& mountpoint, std::shared_ptr<const archive::backend> backend,
-         fs::path overlay) {
+         fs::path overlay, fs::path archive) {
   if (!is_valid_mountpoint(mountpoint)) {
     return false;
   }
   const auto normalized = mountpoint.lexically_normal();
   {
     const std::scoped_lock lock(table_mutex());
-    table().push_back({normalized, std::move(backend), std::move(overlay)});
+    table().push_back({normalized, std::move(backend), std::move(overlay), std::move(archive)});
   }
   // Relative paths resolve into the archive by default once one is mounted.
   if (!cwd::archive_cwd()) {
@@ -71,6 +72,15 @@ void clear() {
   }
   for (const auto& o : overlays) overlay::lock::release(o);
   cwd::clear();
+}
+
+std::optional<std::filesystem::path> archive_of(const fs::path& mountpoint) {
+  const auto normalized = mountpoint.lexically_normal();
+  const std::scoped_lock lock(table_mutex());
+  for (const auto& m : table()) {
+    if (m.mountpoint == normalized) return m.archive;
+  }
+  return std::nullopt;
 }
 
 std::optional<fs::path> remove(const fs::path& mountpoint) {
@@ -123,7 +133,7 @@ std::optional<route> find(const fs::path& p) {
   if (rel == ".") {
     rel.clear();
   }
-  return route{best->backend, std::move(rel), target, best->overlay};
+  return route{best->backend, std::move(rel), target, best->overlay, best->archive};
 }
 
 }  // namespace rwzfs::fs::mounts

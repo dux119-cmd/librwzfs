@@ -50,15 +50,16 @@ Behavior:
 - The archive is never modified.
 
 Limits:
-- Renaming a directory returns `ENOTSUP`.
+- Renaming a directory moves the whole tree: each file is copied up and renamed, then the emptied source is removed. Large trees copy in full. Moving a directory into its own subtree fails with `EINVAL`.
+- Symlinks cannot be renamed (`ENOTSUP`).
 - Directory permissions are not stored: `mkdir` ignores the mode, and metadata changes on directories return `EPERM`.
-- Access times are not stored.
+- Access times are not stored; only modification times are.
 - Symlinks cannot be created in the overlay.
 - The layer trusts its inputs. Paths and the overlay location are not validated here, as required for the strict IO layer.
 
 ## Locking
 - Mounting creates `.rwz.lock` in the overlay directory, containing the owner's process id. Creation uses `O_EXCL`.
-- A lock whose owner is no longer running is taken over. A live owner, including this process, gives `MountError::ArchiveInUse`.
+- If the lock file already exists, the archive is refused with `MountError::ArchiveInUse`. Only one instance is allowed. The error message tells the user to delete the lock file if no other instance is running. There is no automatic takeover: a crashed run leaves the file for the user to remove.
 - `unmount_archive(mountpoint)` and `mounts::clear()` remove the lock. An `atexit` hook removes held locks at normal exit.
 - `rwzfs::overlay::lock::enable_signal_cleanup()` (opt-in) removes held locks on SIGINT, SIGTERM and SIGHUP, then re-raises. SIGKILL cannot be handled; the next mount takes over the stale lock.
 - Windows locking is not implemented yet.
@@ -72,7 +73,7 @@ Limits:
 - Opening an archive-only file for writing, without `O_TRUNC` and without `O_EXCL`, does not copy it up. The descriptor reads from the archive until its first write. Then the whole file is copied up in one step.
 - Truncating opens and creation copy up immediately, since they change content.
 - Reads through a deferred descriptor switch to the overlay copy if another descriptor copied the file up.
-- stdio write modes (`fopen` with `w`, `a`, `+`) copy up at open. Deferral is POSIX-only for now.
+- stdio write modes (`fopen` with `w`, `a`, `+`) copy up at open. Deferring it would need a hook on every `FILE*` write, which means `fopencookie`/`funopen`. Those differ across glibc, BSD/macOS, and Windows has neither, so this stays a documented limitation.
 
 ## Decisions to confirm
 - macOS and Windows defaults follow platform convention, not the Linux path. Confirm.

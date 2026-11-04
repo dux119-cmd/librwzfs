@@ -260,10 +260,24 @@ TEST_F(ArchiveIo, OpendirMissingFailsWithEnoent) {
   EXPECT_EQ(errno, ENOENT);
 }
 
-TEST_F(ArchiveIo, GlobArchivePatternStillAborts) {
+TEST_F(ArchiveIo, GlobMatchesSortedArchivePaths) {
+  glob_t matches{};
+  ASSERT_EQ(posix::glob("/rwz/*/*.DAT", 0, nullptr, &matches), 0);
+  ASSERT_EQ(matches.gl_pathc, 1u);
+  EXPECT_STREQ(matches.gl_pathv[0], "/rwz/DIR/FILE.DAT");
+  globfree(&matches);
+}
+
+TEST_F(ArchiveIo, GlobNoMatchReturnsNomatch) {
+  glob_t matches{};
+  EXPECT_EQ(posix::glob("/rwz/nope*", 0, nullptr, &matches), GLOB_NOMATCH);
+  globfree(&matches);
+}
+
+TEST_F(ArchiveIo, GlobAppendIsNotSupported) {
   glob_t matches{};
   errno = 0;
-  EXPECT_EQ(posix::glob("/rwz/*.DAT", 0, nullptr, &matches), GLOB_ABORTED);
+  EXPECT_EQ(posix::glob("/rwz/*", GLOB_APPEND, nullptr, &matches), GLOB_ABORTED);
   EXPECT_EQ(errno, ENOTSUP);
 }
 

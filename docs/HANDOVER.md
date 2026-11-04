@@ -26,12 +26,15 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 | Mount table | `mounts::add/find/clear` | Implemented, tested. Mounting sets the archive working directory. Each mount records its overlay directory. |
 | Overlay storage path | `mount_options`, `overlay::overlay_directory` | Implemented, tested. Creates `<write root>/<stem>-writes` at mount. |
 | Copy-on-write engine | `overlay::cow`, overlay POSIX and stdio | Implemented, tested. Copy-up, create, unlink, mkdir, rmdir, truncate, file rename, merged listings, whiteouts and opaque markers. Deferred copy-up for POSIX write-opens. |
-| Overlay lock | `overlay::lock`, `unmount_archive` | Implemented, tested (POSIX). `.rwz.lock` with owner pid; stale takeover; released on unmount, clear, and exit. Windows not yet implemented. |
+| Overlay lock | `overlay::lock`, `unmount_archive` | Implemented, tested (POSIX). `.rwz.lock` breadcrumb: refuses while present, with a message to delete it. Released on unmount, clear, and exit. Windows not yet implemented. |
+| Archive creation | `create_archive` | Implemented, tested (dwarfs CTest). Runs mkdwarfs with the CLI flags. POSIX only. |
+| Archive revision | `flatten`, `revise_archive`, `next_revision_name` | Implemented, tested (dwarfs CTest). Flatten, create `-revN`, unmount, clear overlay. |
+| CI | `.github/workflows/ci.yml` | Written, not yet run. `unit` on Linux, macOS, Windows (no dwarfs). `full` on Linux and macOS (dwarfs v0.15.5 from source). |
 | Metadata COW | `chmod`, `utimensat`, `fs::permissions`, `fs::last_write_time` | Implemented, tested. Files only; directories `EPERM`. |
 | Archive open | `mount_archive` | Opens the dwarfs image, registers it with its mountpoint. |
 | Archive read backend | `archive::backend`, dwarfs backend | Implemented, tested against the dwarfs fixture (including symlinks). |
 | Archive descriptors, DIR handles | `archive_io` | Implemented, tested |
-| POSIX wrappers | POSIX-01..20 | Implemented, tested. Archive: read-only, mutations `EROFS`. |
+| POSIX wrappers | POSIX-01..20 | Implemented, tested. Archive: overlay-backed when mounted with an overlay. `glob` over the merged view (no GLOB_APPEND/BRACE/TILDE). |
 | FS queries | FS-01..24 | Implemented, tested. `exists`, `status`, `is_*`, `canonical`, `equivalent`, `is_empty`, `read_symlink` work on archives. Mutations `EROFS`. `last_write_time`, `space`, `proximate` `not_supported`. |
 | Directory iterators | FS-09, FS-18 | Implemented, tested. Classes with the standard interface. |
 | Stdio wrappers | STDIO-01..09 | Implemented, tested. Archive files: read-only in-memory copy. |
@@ -43,8 +46,8 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 - `CMakePresets.json` sets build and test `jobs` to 0, which uses all cores with the native build tool. Plain `cmake --build build` does not: pass `--parallel` or set `CMAKE_BUILD_PARALLEL_LEVEL`. CMake cannot set this from `CMakeLists.txt`.
 
 ## Tests
-- Standalone (no dwarfs): 303 tests pass with `-Wall -Wextra -Werror`.
-- CMake with dwarfs: 330 tests pass under CTest. Mount tests use a temporary write root, so they never write to the real user state directory. CTest rebuilds the test archive (`build/fixtures/fixture.dwarfs`, from `tests/archive/make_fixture.cmake`) before tests that need it. The archive content is fixed and listed in that file. Tests check the exact content.
+- Standalone (no dwarfs): 316 tests pass with `-Wall -Wextra -Werror`.
+- CMake with dwarfs: 349 tests pass under CTest. Mount tests use a temporary write root, so they never write to the real user state directory. CTest rebuilds the test archive (`build/fixtures/fixture.dwarfs`, from `tests/archive/make_fixture.cmake`) before tests that need it. The archive content is fixed and listed in that file. Tests check the exact content.
 - The dwarfs libraries used for testing came from upstream 0.15.5. The headers were the uploaded set (0.15.3). Key headers are identical.
 
 ## Decisions (settled)
@@ -55,26 +58,28 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 5. `close`, `seek`, `write`, `truncate` map to POSIX. `remove`, `rename` map to C stdio.
 6. Directory iterators are wrapper classes with the standard interface.
 7. Archive stdio streams are read-only in-memory copies. The buffer is freed by `fclose`.
-9. Overlay lock: `.rwz.lock` in the overlay directory while the archive is open. Released on `unmount_archive`, on clear, and at exit. Opt-in signal cleanup.
-10. Copy-up is file-level and happens on the first write, not at open (POSIX). Metadata changes copy up files only.
+9. Overlay lock: `.rwz.lock` in the overlay directory while the archive is open. If it is present, the archive is refused; the user deletes it after a crash. Released on `unmount_archive`, on clear, and at exit. Opt-in signal cleanup.
+11. Archive creation uses the mkdwarfs CLI, not the writer library. Default compression is `zstd:level=12:wlog=27:strat=3`, which needs a zstd that exposes wlog/strat.
+12. Revision unmounts the old archive and clears its overlay after the new archive exists. See docs/archive_creation.md.
+10. Copy-up is file-level, in one step, and happens on the first write for POSIX descriptors. Stdio write opens copy up at open (a platform limitation). Metadata changes copy up files only; only modification times are stored.
 8. Overlay storage: `mount_options::write_root` is the top-level writable directory. The library creates `<stem>-writes` inside it. Default: `$XDG_STATE_HOME/rwz` when `XDG_STATE_HOME` is an absolute path, else `$HOME/.local/state/rwz` on Linux and BSD; `~/Library/Application Support/rwz` on macOS; `%LOCALAPPDATA%\rwz` on Windows. The archive stem is the file name up to its first dot. See docs/overlay_design.md.
 
 ## Remaining work (in order)
-1. **Windows: overlay lock and metadata.** The lock is a no-op and the metadata calls are unverified there. Stdio write opens copy up at open, not on first write.
-2. **Directory rename and directory permission storage** in the overlay (currently `ENOTSUP` and `EPERM`).
-3. **Streaming for large archive files.** The stdio path copies whole archive files into memory. Check `fmemopen` on macOS and BSD before relying on it.
-4. **Windows wrappers (WIN-01..05)** and helpers not in the call list (for example `CloseHandle`, `FindClose`). Needs a Windows toolchain.
-5. **Cross-platform test matrix** (Linux, macOS, BSD, Windows).
-6. **Future feature: archive creation and revision.** A new API creates an rwz archive from a path, and creates a new revision that packs in the overlay content. Creation adds an identifier file to the archive. Revision keeps that identifier file unchanged, so the identifier stays the same. Strict IO trusts the archive and overlay paths it is given. Higher-level logic checks that an archive and its overlay correspond before mounting.
+1. **Verify the CI workflow** on GitHub Actions. Expect the `unit` job on Windows to fail until the tests stop assuming POSIX paths (`/rwz`, `/etc`, POSIX file semantics). Make those tests path-portable or platform-guarded.
+2. **Windows wrappers (WIN-01..05)**, the overlay lock on Windows, and Windows metadata. Needs a Windows toolchain.
+3. **Creation without the mkdwarfs CLI** (library writer), if the process-spawn dependency becomes a problem.
+4. **Streaming for large archive files** through stdio, blocked on a portable `fopencookie`/`funopen` replacement. Accepted as a limitation: stdio archive reads copy the whole file.
+5. **Directory permission storage** in the overlay.
 
 ## Known limitations
 - `input_file_stream` and `output_file_stream` return failed streams for archive paths. A C++ stream cannot wrap an in-memory copy.
-- `glob` does not list archive entries.
 - `ioctl` is declared with one `void*` argument. Variadic callers must be checked.
 - `getcwd` with an archive working directory and a null buffer returns `EINVAL`.
 - Archive stdio streams hold the whole file in memory.
-- Overlay: directory rename, directory permissions, access times, and symlink creation are not implemented.
-- Stdio write opens copy the file up at open, not on the first write.
+- Overlay: directory permissions, access times, symlink creation and symlink rename are not implemented. Directory rename copies the whole tree.
+- Stdio write opens (`fopen` with `w`, `a`, `+`) copy the file up at open, not on the first write.
+- Archive creation and revision run the mkdwarfs CLI. They are POSIX only; Windows returns `unsupported_platform`.
+- Revision holds the whole flattened tree in a scratch directory, so its disk use is at least the size of the merged view. Deferring this needs `fopencookie`/`funopen`, which are not portable to all platforms (Windows has neither), so it is a permanent limitation of the stdio layer.
 - Signal cleanup is best effort; SIGKILL leaves a stale lock, which the next mount takes over.
 - Overlay stem collisions: archives with the same stem share one overlay directory.
 - Archive descriptor numbers are never reused.

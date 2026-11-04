@@ -170,8 +170,21 @@ TEST_F(Cow, RenameOntoArchiveFileReplacesIt) {
   EXPECT_FALSE(cow::lookup(at("ROOT.TXT")).has_value());
 }
 
-TEST_F(Cow, RenameDirectoryIsNotSupported) {
-  EXPECT_EQ(cow::rename_file(at("DIR"), at("OTHER")), std::errc::not_supported);
+TEST_F(Cow, RenameDirectoryMovesWholeTree) {
+  EXPECT_FALSE(cow::rename_file(at("DIR"), at("OTHER")));
+  EXPECT_FALSE(cow::lookup(at("DIR")).has_value());
+  EXPECT_EQ(names(cow::list(at(""))), (std::set<std::string>{"OTHER", "ROOT.TXT"}));
+  EXPECT_EQ(names(cow::list(at("OTHER"))), (std::set<std::string>{"FILE.DAT", "SUB"}));
+  EXPECT_EQ(names(cow::list(at("OTHER/SUB"))), (std::set<std::string>{"inner.txt"}));
+  const auto moved = cow::lookup(at("OTHER/FILE.DAT"));
+  ASSERT_TRUE(moved.has_value());
+  EXPECT_EQ(read_host(moved->host), "payload");
+  // The archive keeps its tree.
+  EXPECT_TRUE(backend_->lookup("DIR/SUB/inner.txt").has_value());
+}
+
+TEST_F(Cow, RenameDirectoryOntoNonEmptyDirectoryFails) {
+  EXPECT_EQ(cow::rename_file(at("DIR"), at("DIR/SUB")), std::errc::invalid_argument);
 }
 
 TEST_F(Cow, MutationsWithoutOverlayAreReadOnly) {

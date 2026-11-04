@@ -40,9 +40,15 @@ TEST_F(OverlayLock, ReacquireAfterReleaseSucceeds) {
   lock::release(dir_.path());
 }
 
-TEST_F(OverlayLock, StaleLockOfDeadProcessIsTakenOver) {
-  // A process id far above any real pid: its owner cannot be running.
+TEST_F(OverlayLock, LeftoverLockFileRefusesUntilUserRemovesIt) {
+  // A crashed run leaves the lock behind. Nothing is taken over automatically.
   std::ofstream(dir_.path() / lock::kLockName) << "999999999\n";
+  const auto refused = lock::acquire(dir_.path());
+  ASSERT_FALSE(refused.has_value());
+  EXPECT_EQ(refused.error(), lock::lock_error::in_use);
+  EXPECT_TRUE(fs::exists(dir_.path() / lock::kLockName));
+
+  fs::remove(dir_.path() / lock::kLockName);
   EXPECT_TRUE(lock::acquire(dir_.path()).has_value());
   lock::release(dir_.path());
 }

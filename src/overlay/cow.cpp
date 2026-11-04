@@ -242,18 +242,12 @@ std::error_code truncate(const layer& l, std::uintmax_t length) {
   return ec;
 }
 
-std::error_code rename_file(const layer& from, const layer& to) {
-  if (!has_overlay(from) || !has_overlay(to)) return ec_of(std::errc::read_only_file_system);
-  const auto nf = lookup(from);
-  if (!nf) return ec_of(std::errc::no_such_file_or_directory);
-  if (nf->info.type == archive::kind::directory) return ec_of(std::errc::not_supported);
-  if (auto err = check_parent(to)) return err;
-  const auto nt = lookup(to);
-  if (nt && nt->info.type == archive::kind::directory) return ec_of(std::errc::is_a_directory);
-
+// Renames one non-directory entry (file). Symlinks are not renamed (not representable yet).
+std::error_code rename_entry(const layer& from, const layer& to, const node& nf) {
+  if (nf.info.type == archive::kind::symlink) return ec_of(std::errc::not_supported);
   if (auto err = make_parent_dirs(from)) return err;
-  if (nf->where == origin::archive) {
-    if (auto err = copy_up(from, nf->info)) return err;
+  if (nf.where == origin::archive) {
+    if (auto err = copy_up(from, nf.info)) return err;
   }
   std::error_code ec;
   stdfs::create_directories(data_of(to, parent_of(to.rel)), ec);
@@ -263,6 +257,58 @@ std::error_code rename_file(const layer& from, const layer& to) {
   if (ec) return ec;
   if (archive_has(from)) return make_marker(whiteout_of(from, from.rel));
   return {};
+}
+
+// Moves a merged directory tree: create the target, move each child, then remove the source.
+// Removing the source writes whiteouts for archive entries, so the archive stays untouched.
+std::error_code move_tree(const layer& from, const layer& to) {
+  if (auto err = create_dir(to)) return err;
+  const auto kids = list(from);
+  if (!kids) return ec_of(std::errc::not_a_directory);
+  for (const auto& c : *kids) {
+    layer f = from;
+    layer t = to;
+    f.rel = from.rel.empty() ? c.name : from.rel + "/" + c.name;
+    t.rel = to.rel.empty() ? c.name : to.rel + "/" + c.name;
+    if (c.info.type == archive::kind::directory) {
+      if (auto err = move_tree(f, t)) return err;
+    } else {
+      const auto nf = lookup(f);
+      if (!nf) return ec_of(std::errc::no_such_file_or_directory);
+      if (auto err = rename_entry(f, t, *nf)) return err;
+    }
+  }
+  return remove_dir(from);
+}
+
+std::error_code rename_file(const layer& from, const layer& to) {
+  if (!has_overlay(from) || !has_overlay(to)) return ec_of(std::errc::read_only_file_system);
+  const auto nf = lookup(from);
+  if (!nf) return ec_of(std::errc::no_such_file_or_directory);
+  if (auto err = check_parent(to)) return err;
+  // A directory cannot move into its own subtree.
+  if (nf->info.type == archive::kind::directory && to.rel.size() > from.rel.size() &&
+      to.rel.compare(0, from.rel.size(), from.rel) == 0 && to.rel[from.rel.size()] == '/') {
+    return ec_of(std::errc::invalid_argument);
+  }
+  const auto nt = lookup(to);
+  if (nt) {
+    // Like POSIX rename: a file replaces a file; a directory replaces an empty directory.
+    if (nt->info.type == archive::kind::directory && nf->info.type != archive::kind::directory) {
+      return ec_of(std::errc::is_a_directory);
+    }
+    if (nt->info.type != archive::kind::directory && nf->info.type == archive::kind::directory) {
+      return ec_of(std::errc::not_a_directory);
+    }
+    if (nt->info.type == archive::kind::directory) {
+      if (auto kids = list(to); kids && !kids->empty()) {
+        return ec_of(std::errc::directory_not_empty);
+      }
+      if (auto err = remove_dir(to)) return err;
+    }
+  }
+  if (nf->info.type == archive::kind::directory) return move_tree(from, to);
+  return rename_entry(from, to, *nf);
 }
 
 std::expected<stdfs::path, std::error_code> prepare_write(const layer& l, bool create,

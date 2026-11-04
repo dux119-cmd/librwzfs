@@ -74,7 +74,6 @@ jobs:
 
       - name: Build dwarfs
         if: steps.cache-dwarfs.outputs.cache-hit != 'true'
-        env:
         run: |
           if [ "$RUNNER_OS" = Linux ]; then CC=gcc-14; CXX=g++-14; else CC=cc; CXX=c++; fi
           git clone --depth 1 --branch "$DWARFS_REF" https://github.com/mhx/dwarfs.git dwarfs-src

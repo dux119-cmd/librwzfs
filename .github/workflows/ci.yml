@@ -55,14 +55,15 @@ jobs:
 
       - name: Select Xcode (macOS)
         if: runner.os == 'macOS'
-        # Xcode 16+ SDKs break dwarfs (mach headers). macos-14 ships Xcode 15.4.
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+        # Apple clang with libc++ 18 (has std::chrono::from_stream) and the Xcode 16.4 SDK
+        # (its mach headers compile with dwarfs). Matches Homebrew's libc++-built fmt and Boost.
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install ninja pkg-config boost fmt zstd openssl@3 xxhash flac lz4 xz brotli \
-            libarchive nlohmann-json utf8cpp googletest jemalloc gcc@14
+            libarchive nlohmann-json utf8cpp googletest jemalloc
 
       - name: Cache dwarfs install
         id: cache-dwarfs
@@ -74,10 +75,8 @@ jobs:
       - name: Build dwarfs
         if: steps.cache-dwarfs.outputs.cache-hit != 'true'
         env:
-          # dwarfs needs std::chrono::from_stream, which Apple's libc++ lacks: use GCC 14 on macOS too.
-          CC: gcc-14
-          CXX: g++-14
         run: |
+          if [ "$RUNNER_OS" = Linux ]; then CC=gcc-14; CXX=g++-14; else CC=cc; CXX=c++; fi
           git clone --depth 1 --branch "$DWARFS_REF" https://github.com/mhx/dwarfs.git dwarfs-src
           cmake -S dwarfs-src -B dwarfs-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \

@@ -36,9 +36,19 @@ std::error_code write_archive_file(const cow::layer& l, const archive::entry& in
   return {};
 }
 
+// Modes and times are applied when the host supports them. On Windows they are best effort:
+// content and structure are always written, and metadata failures do not abort a flatten.
 std::error_code apply_metadata(const stdfs::path& p, const archive::entry& info) {
-  if (auto err = host_meta::set_mode(p, info.mode & 07777)) return err;
-  return host_meta::set_mtime(p, info.mtime);
+  const auto mode_err = host_meta::set_mode(p, info.mode & 07777);
+  const auto time_err = host_meta::set_mtime(p, info.mtime);
+#if defined(_WIN32)
+  (void)mode_err;
+  (void)time_err;
+  return {};
+#else
+  if (mode_err) return mode_err;
+  return time_err;
+#endif
 }
 
 std::error_code flatten_dir(const cow::layer& dir, const stdfs::path& host) {

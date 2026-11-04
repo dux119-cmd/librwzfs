@@ -12,6 +12,7 @@
 #include "rwzfs/fs/cwd.hpp"
 #include "rwzfs/fs/mount_table.hpp"
 #include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/fs/time.hpp"
 #include "rwzfs/overlay/cow.hpp"
 
 namespace rwzfs::fs {
@@ -340,8 +341,7 @@ stdfs::file_time_type last_write_time(const path& in, std::error_code& ec) {
     const auto n = cow::lookup(cow::layer_of(*r));
     if (!n) { no_such_file(ec); return {}; }
     ec.clear();
-    const auto sys = std::chrono::system_clock::time_point(std::chrono::seconds(n->info.mtime));
-    return std::chrono::clock_cast<stdfs::file_time_type::clock>(sys);
+    return from_unix_seconds(n->info.mtime);
   }
   return stdfs::last_write_time(p, ec);
 }
@@ -351,9 +351,7 @@ void last_write_time(const path& in, stdfs::file_time_type t, std::error_code& e
   if (ec) return;
   if (const auto r = archive_route(p)) {
     if (!has_overlay(*r)) { refuse_write(*r, ec); return; }
-    const auto sys = std::chrono::clock_cast<std::chrono::system_clock>(t);
-    const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(sys.time_since_epoch()).count();
-    set_ec(ec, cow::set_mtime(cow::layer_of(*r), static_cast<std::int64_t>(seconds)));
+    set_ec(ec, cow::set_mtime(cow::layer_of(*r), to_unix_seconds(t)));
     return;
   }
   stdfs::last_write_time(p, t, ec);

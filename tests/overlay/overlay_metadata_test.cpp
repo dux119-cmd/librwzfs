@@ -18,6 +18,7 @@
 #include "rwzfs/fs/cwd.hpp"
 #include "rwzfs/fs/filesystem.hpp"
 #include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/time.hpp"
 #include "rwzfs/io/posix.hpp"
 
 namespace fs = std::filesystem;
@@ -94,15 +95,11 @@ TEST_F(OverlayMetadata, FsPermissionsCopyUp) {
 
 TEST_F(OverlayMetadata, FsLastWriteTimeRoundTrip) {
   std::error_code ec;
-  const auto sys = std::chrono::system_clock::time_point(std::chrono::seconds(kStamp));
-  const auto t = std::chrono::clock_cast<fs::file_time_type::clock>(sys);
-  rfs::last_write_time(fs::path(kFile), t, ec);
+  rfs::last_write_time(fs::path(kFile), rwzfs::fs::from_unix_seconds(kStamp), ec);
   ASSERT_FALSE(ec);
   const auto back = rfs::last_write_time(fs::path(kFile), ec);
   ASSERT_FALSE(ec);
-  const auto back_sys = std::chrono::clock_cast<std::chrono::system_clock>(back);
-  EXPECT_EQ(std::chrono::duration_cast<std::chrono::seconds>(back_sys.time_since_epoch()).count(),
-            kStamp);
+  EXPECT_EQ(rwzfs::fs::to_unix_seconds(back), kStamp);
 }
 
 TEST_F(OverlayMetadata, ReadOnlyOpenNeverCopiesUp) {

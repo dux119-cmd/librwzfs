@@ -89,7 +89,7 @@ void fill_stat(const rwzfs::archive::entry& e, struct stat* buf) {
   buf->st_ino = static_cast<ino_t>(e.inode);
   buf->st_size = static_cast<off_t>(e.size);
   buf->st_nlink = 1;
-  buf->st_mtim.tv_sec = static_cast<time_t>(e.mtime);
+  buf->st_mtime = static_cast<time_t>(e.mtime);
 }
 
 int stat(const route& r, struct stat* buf) {

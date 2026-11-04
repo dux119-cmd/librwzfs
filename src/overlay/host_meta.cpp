@@ -60,7 +60,7 @@ std::error_code set_mtime(const std::filesystem::path& p, std::int64_t seconds) 
 
 #else  // Windows: permissions and timestamps through std::filesystem. Not yet verified.
 
-#include <chrono>
+#include "rwzfs/fs/time.hpp"
 
 namespace rwzfs::overlay::host_meta {
 
@@ -75,8 +75,7 @@ std::optional<archive::entry> entry_of(const stdfs::path& p) {
            : st.type() == stdfs::file_type::directory ? archive::kind::directory
                                                       : archive::kind::other;
   e.size = e.type == archive::kind::file ? stdfs::file_size(p, ec) : 0;
-  const auto sys = std::chrono::clock_cast<std::chrono::system_clock>(stdfs::last_write_time(p, ec));
-  e.mtime = std::chrono::duration_cast<std::chrono::seconds>(sys.time_since_epoch()).count();
+  e.mtime = rwzfs::fs::to_unix_seconds(stdfs::last_write_time(p, ec));
   e.mode = static_cast<std::uint32_t>(st.permissions());
   return e;
 }
@@ -88,9 +87,8 @@ std::error_code set_mode(const stdfs::path& p, std::uint32_t mode_bits) {
 }
 
 std::error_code set_mtime(const stdfs::path& p, std::int64_t seconds) {
-  const auto sys = std::chrono::system_clock::time_point(std::chrono::seconds(seconds));
   std::error_code ec;
-  stdfs::last_write_time(p, std::chrono::clock_cast<stdfs::file_time_type::clock>(sys), ec);
+  stdfs::last_write_time(p, rwzfs::fs::from_unix_seconds(seconds), ec);
   return ec;
 }
 

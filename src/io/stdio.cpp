@@ -92,6 +92,11 @@ std::FILE* open_archive_stream(const route& r) {
     errno = ENOTSUP;
     return nullptr;
   }
+#if defined(_WIN32)
+  // In-memory streams need fmemopen, which Windows does not have. See docs/overlay_design.md.
+  errno = ENOTSUP;
+  return nullptr;
+#else
   if (e->size == 0) {
     return std::fopen("/dev/null", "rb");  // an empty stream, with no buffer to own
   }
@@ -107,6 +112,7 @@ std::FILE* open_archive_stream(const route& r) {
   const std::scoped_lock lock(stream_mutex());
   archive_streams().emplace(stream, std::move(buffer));
   return stream;
+#endif
 }
 
 }  // namespace
@@ -135,7 +141,7 @@ std::FILE* open_overlay_stream(const route& r, const char* mode) {
       errno = ENOENT;
       return nullptr;
     }
-    if (n->where == cow::origin::overlay) return std::fopen(n->host.c_str(), mode);
+    if (n->where == cow::origin::overlay) return std::fopen(n->host.string().c_str(), mode);
     return open_archive_stream(r);
   }
   const auto host = cow::prepare_write(l, mode_has(mode, 'w') || mode_has(mode, 'a'), false,
@@ -144,7 +150,7 @@ std::FILE* open_overlay_stream(const route& r, const char* mode) {
     errno = host.error().value();
     return nullptr;
   }
-  return std::fopen(host->c_str(), mode);
+  return std::fopen(host->string().c_str(), mode);
 }
 
 }  // namespace
@@ -160,7 +166,7 @@ std::FILE* fopen(const char* path, const char* mode) {
     }
     return open_archive_stream(*r);
   }
-  return std::fopen(p->c_str(), mode);
+  return std::fopen(p->string().c_str(), mode);
 }
 
 // STDIO-03
@@ -197,7 +203,7 @@ int remove(const char* path) {
     errno = r->backend ? EROFS : ENOTSUP;
     return -1;
   }
-  return std::remove(p->c_str());
+  return std::remove(p->string().c_str());
 }
 
 // STDIO-06
@@ -221,7 +227,7 @@ int rename(const char* from, const char* to) {
     }
     return 0;
   }
-  return std::rename(src->c_str(), dst->c_str());
+  return std::rename(src->string().c_str(), dst->string().c_str());
 }
 
 // STDIO-07. A stream for an archive path is returned in the failed state.

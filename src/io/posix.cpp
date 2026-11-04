@@ -222,7 +222,7 @@ int glob(const char* pattern, int flags, int (*errfunc)(const char*, int), glob_
 
 }  // namespace rwzfs::io::posix
 
-#endif  // !defined(_WIN32)
+
 
 namespace rwzfs::io::posix {
 
@@ -252,3 +252,5 @@ int utimensat(int dirfd, const char* path, const struct timespec times[2], int f
 }
 
 }  // namespace rwzfs::io::posix
+
+#endif  // !defined(_WIN32)

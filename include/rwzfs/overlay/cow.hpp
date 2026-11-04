@@ -57,4 +57,12 @@ struct node {
 [[nodiscard]] std::expected<std::filesystem::path, std::error_code> prepare_write(
     const layer& l, bool create, bool exclusive, bool truncate);
 
+// Copies an archive file up (if needed) and returns its overlay path. Used by deferred writes.
+[[nodiscard]] std::expected<std::filesystem::path, std::error_code> materialize(const layer& l);
+
+// Metadata changes on files. The file is copied up first, then the change applies to the copy.
+// Directories and other non-file entries fail with EPERM.
+[[nodiscard]] std::error_code set_mode(const layer& l, std::uint32_t mode_bits);
+[[nodiscard]] std::error_code set_mtime(const layer& l, std::int64_t seconds);
+
 }  // namespace rwzfs::overlay::cow

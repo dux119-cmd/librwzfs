@@ -24,8 +24,10 @@ std::optional<entry> dwarfs_backend::entry_of(const dwarfs::reader::inode_view& 
   if (ec) {
     return std::nullopt;
   }
-  return entry{kind_of(iv), iv.inode_num(), static_cast<std::uint64_t>(st.size()),
-               static_cast<std::uint32_t>(st.mode())};
+  entry e{kind_of(iv), iv.inode_num(), static_cast<std::uint64_t>(st.size()),
+          static_cast<std::uint32_t>(st.mode())};
+  e.mtime = static_cast<std::int64_t>(st.mtime());
+  return e;
 }
 
 std::optional<entry> dwarfs_backend::lookup(std::string_view rel) const {

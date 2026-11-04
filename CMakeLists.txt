@@ -72,7 +72,9 @@ add_library(rwzfs
   src/io/posix.cpp
   src/io/stdio.cpp
   src/io/overlay_posix.cpp
-  src/overlay/cow.cpp)
+  src/overlay/cow.cpp
+  src/overlay/host_meta.cpp
+  src/overlay/lock.cpp)
 target_include_directories(rwzfs
   PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
   PRIVATE ${DWARFS_PREFIX}/include)
@@ -109,6 +111,8 @@ if(RWZFS_BUILD_TESTS)
     tests/fs/overlay_test.cpp
     tests/overlay/cow_test.cpp
     tests/overlay/overlay_integration_test.cpp
+    tests/overlay/overlay_metadata_test.cpp
+    tests/overlay/lock_test.cpp
     tests/fs/path_test.cpp
     tests/fs/archive_path_test.cpp
     tests/fs/filesystem_test.cpp

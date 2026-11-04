@@ -1,4 +1,5 @@
 #include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/overlay/host_meta.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -59,30 +60,7 @@ std::vector<std::string> ancestors(const std::string& rel) {
 }
 
 std::optional<archive::entry> info_of_host(const stdfs::path& p) {
-  std::error_code ec;
-  const auto st = stdfs::symlink_status(p, ec);
-  if (ec || st.type() == stdfs::file_type::not_found) return std::nullopt;
-  archive::entry e;
-  e.inode = 0;
-  constexpr std::uint32_t kTypeBitsFile = 0100000;
-  constexpr std::uint32_t kTypeBitsDir = 0040000;
-  constexpr std::uint32_t kPermMask = 07777;
-  switch (st.type()) {
-    case stdfs::file_type::regular:
-      e.type = archive::kind::file;
-      e.mode = kTypeBitsFile | (static_cast<std::uint32_t>(st.permissions()) & kPermMask);
-      e.size = stdfs::file_size(p, ec);
-      if (ec) e.size = 0;
-      break;
-    case stdfs::file_type::directory:
-      e.type = archive::kind::directory;
-      e.mode = kTypeBitsDir | (static_cast<std::uint32_t>(st.permissions()) & kPermMask);
-      break;
-    default:
-      e.type = archive::kind::other;
-      e.mode = static_cast<std::uint32_t>(st.permissions()) & kPermMask;
-  }
-  return e;
+  return host_meta::entry_of(p);
 }
 
 // Archive entries under `rel` are visible unless a deletion or opaque marker hides them.
@@ -312,6 +290,48 @@ std::expected<stdfs::path, std::error_code> prepare_write(const layer& l, bool c
     }
   }
   return data_of(l, l.rel);
+}
+
+std::expected<stdfs::path, std::error_code> materialize(const layer& l) {
+  if (!has_overlay(l)) return std::unexpected(ec_of(std::errc::read_only_file_system));
+  const auto n = lookup(l);
+  if (!n) return std::unexpected(ec_of(std::errc::no_such_file_or_directory));
+  if (n->info.type == archive::kind::directory) {
+    return std::unexpected(ec_of(std::errc::is_a_directory));
+  }
+  if (n->where == origin::archive) {
+    if (auto err = make_parent_dirs(l)) return std::unexpected(err);
+    if (auto err = copy_up(l, n->info)) return std::unexpected(err);
+  }
+  return data_of(l, l.rel);
+}
+
+// Metadata changes apply to files only. Directories are never copied up as a tree.
+std::error_code change_file_metadata(const layer& l, std::error_code (*apply)(const stdfs::path&, std::uint64_t),
+                                     std::uint64_t value) {
+  if (!has_overlay(l)) return ec_of(std::errc::read_only_file_system);
+  const auto n = lookup(l);
+  if (!n) return ec_of(std::errc::no_such_file_or_directory);
+  if (n->info.type != archive::kind::file) return ec_of(std::errc::operation_not_permitted);
+  const auto host = materialize(l);
+  if (!host) return host.error();
+  return apply(*host, value);
+}
+
+std::error_code set_mode(const layer& l, std::uint32_t mode_bits) {
+  return change_file_metadata(
+      l, [](const stdfs::path& p, std::uint64_t v) {
+        return host_meta::set_mode(p, static_cast<std::uint32_t>(v));
+      },
+      mode_bits);
+}
+
+std::error_code set_mtime(const layer& l, std::int64_t seconds) {
+  return change_file_metadata(
+      l, [](const stdfs::path& p, std::uint64_t v) {
+        return host_meta::set_mtime(p, static_cast<std::int64_t>(v));
+      },
+      static_cast<std::uint64_t>(seconds));
 }
 
 }  // namespace rwzfs::overlay::cow

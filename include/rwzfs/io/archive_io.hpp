@@ -23,6 +23,9 @@ inline constexpr int kFdBase = 0x40000000;
 using route = rwzfs::fs::mounts::route;
 
 [[nodiscard]] bool is_fd(int fd);
+
+// Next free descriptor number in the archive range. Shared with deferred-write descriptors.
+[[nodiscard]] int allocate_fd();
 [[nodiscard]] bool is_dir(DIR* dir);
 
 // Each function reports ENOTSUP for a route without a backend.

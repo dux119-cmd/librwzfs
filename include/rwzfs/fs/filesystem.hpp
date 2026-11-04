@@ -51,6 +51,8 @@ void current_path(const path& p, std::error_code& ec);
 // FS-20 (1x)
 [[nodiscard]] std::filesystem::file_time_type last_write_time(const path& p,
                                                               std::error_code& ec);
+// METADATA (new): sets the modification time. Archive files are copied up first; directories fail (EPERM).
+void last_write_time(const path& p, std::filesystem::file_time_type t, std::error_code& ec);
 // FS-21 (1x)
 [[nodiscard]] std::uintmax_t remove_all(const path& p, std::error_code& ec);
 // FS-22 (1x)

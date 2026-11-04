@@ -208,10 +208,13 @@ TEST_F(OverlayIntegration, FsRenameAndRemoveThroughOverlay) {
   EXPECT_FALSE(rfs::exists(fs::path("/rwz/R2.TXT"), ec));
 }
 
-TEST_F(OverlayIntegration, FsPermissionsStillReadOnly) {
+TEST_F(OverlayIntegration, FsPermissionsCopyUpThroughOverlay) {
   std::error_code ec;
-  rfs::permissions(fs::path("/rwz/DIR/FILE.DAT"), fs::perms::owner_write, ec);
-  EXPECT_EQ(ec, std::errc::read_only_file_system);
+  rfs::permissions(fs::path("/rwz/DIR/FILE.DAT"), fs::perms::owner_read, ec);
+  EXPECT_FALSE(ec);
+  EXPECT_EQ(rfs::status(fs::path("/rwz/DIR/FILE.DAT"), ec).permissions() & fs::perms::owner_write,
+            fs::perms::none);
+  expect_archive_unchanged();
 }
 
 TEST_F(OverlayIntegration, RelativeWritesUseArchiveCwd) {

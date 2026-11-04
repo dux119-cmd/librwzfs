@@ -115,9 +115,8 @@ TEST_F(ArchiveFsQueries, CopyIntoArchiveIsReadOnly) {
   EXPECT_EQ(ec, std::errc::read_only_file_system);
 }
 
-TEST_F(ArchiveFsQueries, LastWriteTimeIsNotSupported) {
+TEST_F(ArchiveFsQueries, LastWriteTimeReadsArchiveTimestamp) {
   std::error_code ec;
   (void)rfs::last_write_time("/rwz/DIR/FILE.DAT", ec);
-  EXPECT_EQ(ec, std::errc::not_supported);
-
+  EXPECT_FALSE(ec);
 }

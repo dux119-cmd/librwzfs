@@ -8,6 +8,7 @@
 #include "rwzfs/fs/archive_path.hpp"
 #include "rwzfs/fs/mount_table.hpp"
 #include "rwzfs/overlay.hpp"
+#include "rwzfs/overlay/lock.hpp"
 
 namespace rwzfs {
 
@@ -41,15 +42,25 @@ MountError mount_archive(const stdfs::path& archive, const stdfs::path& mountpoi
   if (ec) {
     return MountError::WriteRootUnavailable;
   }
+  if (const auto held = overlay::lock::acquire(*overlay_dir); !held) {
+    return held.error() == overlay::lock::lock_error::in_use ? MountError::ArchiveInUse
+                                                              : MountError::WriteRootUnavailable;
+  }
   try {
     auto backend = std::make_shared<archive::dwarfs_backend>(archive);
     if (!rwzfs::fs::mounts::add(mountpoint, std::move(backend), *overlay_dir)) {
+      overlay::lock::release(*overlay_dir);
       return MountError::MountPointInvalid;
     }
   } catch (const std::exception&) {
+    overlay::lock::release(*overlay_dir);
     return MountError::OpenFailed;
   }
   return MountError::None;
+}
+
+bool unmount_archive(const stdfs::path& mountpoint) {
+  return rwzfs::fs::mounts::remove(mountpoint).has_value();
 }
 
 std::string to_string(MountError error) {
@@ -60,6 +71,7 @@ std::string to_string(MountError error) {
     case MountError::OpenFailed: return "failed to open archive";
     case MountError::WriteRootInvalid: return "write root must be an absolute path";
     case MountError::WriteRootUnavailable: return "overlay directory could not be created";
+    case MountError::ArchiveInUse: return "archive is already open (overlay lock held)";
   }
   return "unknown";
 }

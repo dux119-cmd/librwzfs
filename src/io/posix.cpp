@@ -13,6 +13,7 @@
 
 #include <cerrno>
 #include <cstring>
+#include <ctime>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -48,13 +49,18 @@ std::optional<fs::path> resolved(const char* text, bool follow_final = true) {
 // Every path wrapper resolves its argument (CWD-05) first. Archive paths go to archive_io,
 // everything else passes through to the host call.
 
-int close(int fd) { return aio::is_fd(fd) ? aio::close(fd) : ::close(fd); }
+int close(int fd) {
+  if (ov::owns(fd)) return ov::close(fd);
+  return aio::is_fd(fd) ? aio::close(fd) : ::close(fd);
+}
 
 ssize_t read(int fd, void* buf, std::size_t count) {
+  if (ov::owns(fd)) return ov::read(fd, buf, count);
   return aio::is_fd(fd) ? aio::read(fd, buf, count) : ::read(fd, buf, count);
 }
 
 ssize_t write(int fd, const void* buf, std::size_t count) {
+  if (ov::owns(fd)) return ov::write(fd, buf, count);
   if (aio::is_fd(fd)) {
     errno = EBADF;  // archive descriptors are read-only
     return -1;
@@ -81,7 +87,7 @@ int stat(const char* path, struct stat* buf) {
 }
 
 int ioctl(int fd, unsigned long request, void* arg) {
-  if (aio::is_fd(fd)) {
+  if (ov::owns(fd) || aio::is_fd(fd)) {
     errno = ENOTTY;
     return -1;
   }
@@ -89,6 +95,7 @@ int ioctl(int fd, unsigned long request, void* arg) {
 }
 
 off_t lseek(int fd, off_t offset, int whence) {
+  if (ov::owns(fd)) return ov::seek(fd, offset, whence);
   return aio::is_fd(fd) ? aio::seek(fd, offset, whence) : ::lseek(fd, offset, whence);
 }
 
@@ -102,7 +109,7 @@ int unlink(const char* path) {
 }
 
 void* mmap(void* addr, std::size_t length, int prot, int flags, int fd, off_t offset) {
-  if (aio::is_fd(fd)) {
+  if (ov::owns(fd) || aio::is_fd(fd)) {
     errno = ENODEV;
     return MAP_FAILED;
   }
@@ -169,7 +176,10 @@ int access(const char* path, int mode) {
   return ::access(p->c_str(), mode);
 }
 
-int fsync(int fd) { return aio::is_fd(fd) ? aio::fsync(fd) : ::fsync(fd); }
+int fsync(int fd) {
+  if (ov::owns(fd)) return ov::fsync(fd);
+  return aio::is_fd(fd) ? aio::fsync(fd) : ::fsync(fd);
+}
 
 // POSIX-19 / CWD-04
 char* getcwd(char* buf, std::size_t size) {
@@ -215,3 +225,32 @@ int glob(const char* pattern, int flags, int (*errfunc)(const char*, int), glob_
 }  // namespace rwzfs::io::posix
 
 #endif  // !defined(_WIN32)
+
+namespace rwzfs::io::posix {
+
+int chmod(const char* path, mode_t mode) {
+  const auto p = resolved(path);
+  if (!p) return -1;
+  if (const auto r = fs::mounts::find(*p)) {
+    return r->overlay.empty() ? aio::reject_write(*r) : ov::chmod(*r, mode);
+  }
+  return ::chmod(p->c_str(), mode);
+}
+
+int utimensat(int dirfd, const char* path, const struct timespec times[2], int flags) {
+  const auto p = resolved(path, (flags & AT_SYMLINK_NOFOLLOW) == 0);
+  if (!p) return -1;
+  if (const auto r = fs::mounts::find(*p)) {
+    if (dirfd != AT_FDCWD && !fs::path(path).is_absolute()) {
+      errno = ENOTSUP;  // relative to a directory descriptor is not supported for archive paths
+      return -1;
+    }
+    if (r->overlay.empty()) return aio::reject_write(*r);
+    const std::int64_t seconds = times == nullptr ? static_cast<std::int64_t>(std::time(nullptr))
+                                                  : static_cast<std::int64_t>(times[1].tv_sec);
+    return ov::set_mtime(*r, seconds);
+  }
+  return ::utimensat(dirfd, p->c_str(), times, flags);
+}
+
+}  // namespace rwzfs::io::posix

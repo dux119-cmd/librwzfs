@@ -7,6 +7,7 @@
 #include "rwzfs/fs/archive_path.hpp"
 #include "rwzfs/fs/cwd.hpp"
 #include "rwzfs/fs/walk.hpp"
+#include "rwzfs/overlay/lock.hpp"
 
 namespace rwzfs::fs::mounts {
 
@@ -60,11 +61,35 @@ bool add(const fs::path& mountpoint, std::shared_ptr<const archive::backend> bac
 }
 
 void clear() {
+  std::vector<fs::path> overlays;
   {
     const std::scoped_lock lock(table_mutex());
+    for (const auto& m : table()) {
+      if (!m.overlay.empty()) overlays.push_back(m.overlay);
+    }
     table().clear();
   }
+  for (const auto& o : overlays) overlay::lock::release(o);
   cwd::clear();
+}
+
+std::optional<fs::path> remove(const fs::path& mountpoint) {
+  const auto normalized = mountpoint.lexically_normal();
+  std::optional<fs::path> overlay;
+  {
+    const std::scoped_lock lock(table_mutex());
+    auto& entries = table();
+    const auto it = std::ranges::find_if(
+        entries, [&](const mount_entry& m) { return m.mountpoint == normalized; });
+    if (it == entries.end()) return std::nullopt;
+    overlay = it->overlay;
+    entries.erase(it);
+  }
+  if (const auto base = cwd::archive_cwd(); base && is_within(*base, normalized)) {
+    cwd::clear();
+  }
+  if (overlay && !overlay->empty()) overlay::lock::release(*overlay);
+  return overlay ? *overlay : fs::path{};
 }
 
 bool is_archive_path(const fs::path& p) {

@@ -72,3 +72,17 @@ TEST_F(MountArchive, FixtureMountCreatesOverlayDirectoryNamedFromStem) {
   ASSERT_TRUE(r.has_value());
   EXPECT_EQ(r->overlay, expected);
 }
+
+TEST_F(MountArchive, SecondMountOfSameArchiveIsInUse) {
+  ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", options()), rwzfs::MountError::None);
+  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz/second", options()),
+            rwzfs::MountError::ArchiveInUse);
+}
+
+TEST_F(MountArchive, UnmountReleasesLockSoRemountSucceeds) {
+  ASSERT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", options()), rwzfs::MountError::None);
+  EXPECT_TRUE(fs::exists(writes_.path() / "fixture-writes" / ".rwz.lock"));
+  EXPECT_TRUE(rwzfs::unmount_archive("/rwz"));
+  EXPECT_FALSE(fs::exists(writes_.path() / "fixture-writes" / ".rwz.lock"));
+  EXPECT_EQ(rwzfs::mount_archive(kFixtureArchive, "/rwz", options()), rwzfs::MountError::None);
+}

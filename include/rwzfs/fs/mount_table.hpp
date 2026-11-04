@@ -26,8 +26,12 @@ struct route {
                        std::shared_ptr<const archive::backend> backend = nullptr,
                        std::filesystem::path overlay = {});
 
-// Removes all mountpoints and the archive working directory.
+// Removes all mountpoints, releases their overlay locks, and clears the archive working directory.
 void clear();
+
+// Removes one mountpoint (exact match). Returns its overlay directory, or nullopt if not mounted.
+// Clears the archive working directory if it is inside the removed mount.
+[[nodiscard]] std::optional<std::filesystem::path> remove(const std::filesystem::path& mountpoint);
 
 // True if the path, after walk_lexically, is at or under a mountpoint. Never touches storage.
 [[nodiscard]] bool is_archive_path(const std::filesystem::path& p);

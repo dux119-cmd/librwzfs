@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <cstddef>
@@ -54,6 +55,11 @@ int fsync(int fd);
 char* getcwd(char* buf, std::size_t size);
 // CWD-03 (new, not in the call list)
 int chdir(const char* path);
+
+// METADATA (new). Archive files with an overlay are copied up before the change. Directories
+// cannot change permissions or times through these calls (EPERM).
+int chmod(const char* path, mode_t mode);
+int utimensat(int dirfd, const char* path, const struct timespec times[2], int flags);
 // POSIX-20 (1x)
 int glob(const char* pattern, int flags, int (*errfunc)(const char*, int), glob_t* out);
 

@@ -1,5 +1,6 @@
 #include "rwzfs/fs/filesystem.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <optional>
@@ -228,7 +229,11 @@ bool is_empty(const path& in, std::error_code& ec) {
 void permissions(const path& in, stdfs::perms perms, std::error_code& ec) {
   const auto p = resolve(in, ec);
   if (ec) return;
-  if (const auto r = archive_route(p)) { refuse_write(*r, ec); return; }  // permissions not stored yet
+  if (const auto r = archive_route(p)) {
+    if (!has_overlay(*r)) { refuse_write(*r, ec); return; }
+    set_ec(ec, cow::set_mode(cow::layer_of(*r), static_cast<std::uint32_t>(perms) & 07777));
+    return;
+  }
   stdfs::permissions(p, perms, ec);
 }
 
@@ -330,8 +335,28 @@ path proximate(const path& in, const path& base, std::error_code& ec) {
 stdfs::file_time_type last_write_time(const path& in, std::error_code& ec) {
   const auto p = resolve(in, ec);
   if (ec) return {};
-  if (routed(p)) { unsupported(ec); return {}; }  // archive entries carry no timestamps yet
+  if (const auto r = archive_route(p)) {
+    if (!r->backend) { unsupported(ec); return {}; }
+    const auto n = cow::lookup(cow::layer_of(*r));
+    if (!n) { no_such_file(ec); return {}; }
+    ec.clear();
+    const auto sys = std::chrono::system_clock::time_point(std::chrono::seconds(n->info.mtime));
+    return std::chrono::clock_cast<stdfs::file_time_type::clock>(sys);
+  }
   return stdfs::last_write_time(p, ec);
+}
+
+void last_write_time(const path& in, stdfs::file_time_type t, std::error_code& ec) {
+  const auto p = resolve(in, ec);
+  if (ec) return;
+  if (const auto r = archive_route(p)) {
+    if (!has_overlay(*r)) { refuse_write(*r, ec); return; }
+    const auto sys = std::chrono::clock_cast<std::chrono::system_clock>(t);
+    const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(sys.time_since_epoch()).count();
+    set_ec(ec, cow::set_mtime(cow::layer_of(*r), static_cast<std::int64_t>(seconds)));
+    return;
+  }
+  stdfs::last_write_time(p, t, ec);
 }
 
 std::uintmax_t remove_all(const path& in, std::error_code& ec) {

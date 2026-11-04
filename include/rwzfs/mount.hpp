@@ -14,6 +14,7 @@ enum class MountError {
   OpenFailed,
   WriteRootInvalid,      // mount_options::write_root is not absolute
   WriteRootUnavailable,  // the overlay directory could not be created
+  ArchiveInUse,          // another process (or this one) already has the archive open
 };
 
 // Mounts an archive at the archive root ("/rwz") with default options.
@@ -27,6 +28,10 @@ enum class MountError {
 [[nodiscard]] MountError mount_archive(const std::filesystem::path& archive,
                                        const std::filesystem::path& mountpoint,
                                        const mount_options& options);
+
+// Closes a mount: removes the mountpoint and releases the archive's lock file.
+// Returns false if nothing is mounted there.
+bool unmount_archive(const std::filesystem::path& mountpoint);
 
 [[nodiscard]] std::string to_string(MountError error);
 

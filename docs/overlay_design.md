@@ -51,9 +51,28 @@ Behavior:
 
 Limits:
 - Renaming a directory returns `ENOTSUP`.
-- Permissions and timestamps are not stored. `chmod`-style calls return `EROFS`, and `mkdir` ignores the mode.
+- Directory permissions are not stored: `mkdir` ignores the mode, and metadata changes on directories return `EPERM`.
+- Access times are not stored.
 - Symlinks cannot be created in the overlay.
 - The layer trusts its inputs. Paths and the overlay location are not validated here, as required for the strict IO layer.
+
+## Locking
+- Mounting creates `.rwz.lock` in the overlay directory, containing the owner's process id. Creation uses `O_EXCL`.
+- A lock whose owner is no longer running is taken over. A live owner, including this process, gives `MountError::ArchiveInUse`.
+- `unmount_archive(mountpoint)` and `mounts::clear()` remove the lock. An `atexit` hook removes held locks at normal exit.
+- `rwzfs::overlay::lock::enable_signal_cleanup()` (opt-in) removes held locks on SIGINT, SIGTERM and SIGHUP, then re-raises. SIGKILL cannot be handled; the next mount takes over the stale lock.
+- Windows locking is not implemented yet.
+
+## Metadata (permissions and timestamps)
+- `chmod`, `utimensat` (modification time; access time is not stored), `fs::permissions` and `fs::last_write_time` (setter) copy an archive file up first, then apply the change to the overlay copy. Later stat calls read the copy.
+- Directories refuse metadata changes with `EPERM`. Only files are copied.
+- Archive mode and mtime are visible through stat once they are in the overlay.
+
+## Deferred copy-up
+- Opening an archive-only file for writing, without `O_TRUNC` and without `O_EXCL`, does not copy it up. The descriptor reads from the archive until its first write. Then the whole file is copied up in one step.
+- Truncating opens and creation copy up immediately, since they change content.
+- Reads through a deferred descriptor switch to the overlay copy if another descriptor copied the file up.
+- stdio write modes (`fopen` with `w`, `a`, `+`) copy up at open. Deferral is POSIX-only for now.
 
 ## Decisions to confirm
 - macOS and Windows defaults follow platform convention, not the Linux path. Confirm.

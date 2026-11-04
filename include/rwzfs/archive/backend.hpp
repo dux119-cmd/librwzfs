@@ -23,6 +23,7 @@ struct entry {
   std::uint64_t inode{0};
   std::uint64_t size{0};
   std::uint32_t mode{0};
+  std::int64_t mtime{0};  // modification time, seconds since the Unix epoch
 };
 
 struct child {

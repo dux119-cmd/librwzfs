@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest, macos-15]
     env:
       DWARFS_REF: v0.15.5
       DWARFS_PREFIX: ${{ github.workspace }}/dwarfs-install
@@ -55,16 +55,35 @@ jobs:
 
       - name: Select Xcode (macOS)
         if: runner.os == 'macOS'
-        # Apple clang with libc++ 18 (has std::chrono::from_stream) and an SDK whose mach headers
-        # compile with dwarfs. Pick the newest installed Xcode 16.x; the runner image varies.
         run: |
-          xcode=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1)
+          xcode=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
           if [ -z "$xcode" ]; then
-            echo "No Xcode 16.x installed. Installed:"; ls -d /Applications/Xcode*.app || true
+            echo "No Xcode installed. Installed:"; ls -d /Applications/Xcode*.app || true
             exit 1
           fi
           sudo xcode-select -s "$xcode"
           xcode-select -p
+          clang++ --version
+
+      - name: Probe libc++ for std::chrono::from_stream (macOS)
+        if: runner.os == 'macOS'
+        # dwarfs needs this function. If the selected libc++ lacks it, fail here with a clear
+        # message instead of deep inside the dwarfs build.
+        run: |
+          cat > probe.cpp << 'PROBE'
+          #include <chrono>
+          #include <sstream>
+          int main() {
+            std::istringstream iss("2020");
+            std::chrono::system_clock::time_point tp;
+            std::chrono::from_stream(iss, "%Y", tp);
+            return 0;
+          }
+          PROBE
+          if ! clang++ -std=c++23 -stdlib=libc++ probe.cpp -o probe; then
+            echo "The selected libc++ has no std::chrono::from_stream. Pick a newer Xcode."
+            exit 1
+          fi
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'

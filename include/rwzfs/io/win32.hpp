@@ -23,6 +23,12 @@ namespace rwzfs::io::win32 {
 // WIN-05 (1x) CreateDirectoryW
 [[nodiscard]] bool create_directory(const wchar_t* path, void* security);
 
+// Helper not in the call list: CloseHandle for handles returned by create_file / find_first_file.
+[[nodiscard]] bool close_handle(void* handle);
+
+// Host paths call the Win32 API. Archive paths fail with ERROR_NOT_SUPPORTED (archive access
+// through Win32 handles is not implemented yet). Failure values follow each Win32 function.
+
 }  // namespace rwzfs::io::win32
 
 #endif  // defined(_WIN32)

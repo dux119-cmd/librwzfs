@@ -67,8 +67,10 @@ TEST_F(Flatten, OverlayChangesAreFlattenedAndArchiveUntouched) {
   ASSERT_FALSE(rwzfs::overlay::flatten(at(""), out_.path()));
 
   EXPECT_EQ(read_text(out_.path() / "DIR" / "FILE.DAT"), "changed");
+#if !defined(_WIN32)  // Windows reports group bits for every file; only read-only is stored there
   EXPECT_EQ(fs::status(out_.path() / "DIR" / "FILE.DAT").permissions() & fs::perms::group_all,
             fs::perms::none);
+#endif
   EXPECT_FALSE(fs::exists(out_.path() / "ROOT.TXT"));
   EXPECT_FALSE(fs::exists(out_.path() / "DIR" / "SUB"));
   EXPECT_EQ(read_text(out_.path() / "NEWSUB" / "inner.txt"), "x");

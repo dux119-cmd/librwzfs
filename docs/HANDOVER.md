@@ -38,7 +38,7 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 | FS queries | FS-01..24 | Implemented, tested. `exists`, `status`, `is_*`, `canonical`, `equivalent`, `is_empty`, `read_symlink` work on archives. Mutations `EROFS`. `last_write_time`, `space`, `proximate` `not_supported`. |
 | Directory iterators | FS-09, FS-18 | Implemented, tested. Classes with the standard interface. |
 | Stdio wrappers | STDIO-01..09 | Implemented, tested. Archive files: read-only in-memory copy. |
-| Win32 wrappers | WIN-01..05 | Declared only. Needs a Windows toolchain. |
+| Win32 wrappers | WIN-01..05 (+ `close_handle`) | Implemented (Windows only, compiled by the Windows CI job; not yet run). Host paths call Win32; archive paths fail with `ERROR_NOT_SUPPORTED`. |
 
 ## Build and test settings
 - ccache is used when installed, with `CCACHE_COMPRESSLEVEL=6` applied through the compiler launcher. Disable with `-DRWZFS_USE_CCACHE=OFF`.
@@ -65,8 +65,8 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 8. Overlay storage: `mount_options::write_root` is the top-level writable directory. The library creates `<stem>-writes` inside it. Default: `$XDG_STATE_HOME/rwz` when `XDG_STATE_HOME` is an absolute path, else `$HOME/.local/state/rwz` on Linux and BSD; `~/Library/Application Support/rwz` on macOS; `%LOCALAPPDATA%\rwz` on Windows. The archive stem is the file name up to its first dot. See docs/overlay_design.md.
 
 ## Remaining work (in order)
-1. **Verify the CI workflow** on GitHub Actions. Expect the `unit` job on Windows to fail until the tests stop assuming POSIX paths (`/rwz`, `/etc`, POSIX file semantics). Make those tests path-portable or platform-guarded.
-2. **Windows wrappers (WIN-01..05)**, the overlay lock on Windows, and Windows metadata. Needs a Windows toolchain.
+1. **Verify the CI workflow** on GitHub Actions for all three platforms. Windows Win32 wrappers and the Windows lock and metadata are compiled and tested for the first time there.
+2. **Win32 archive access.** Route Win32 calls on archive paths to the archive and overlay (currently `ERROR_NOT_SUPPORTED`).
 3. **Creation without the mkdwarfs CLI** (library writer), if the process-spawn dependency becomes a problem.
 4. **Streaming for large archive files** through stdio, blocked on a portable `fopencookie`/`funopen` replacement. Accepted as a limitation: stdio archive reads copy the whole file.
 5. **Directory permission storage** in the overlay.

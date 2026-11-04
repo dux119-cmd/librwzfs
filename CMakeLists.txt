@@ -40,6 +40,7 @@ set(RWZFS_CORE_SOURCES
   src/io/stdio.cpp
   src/io/archive_io.cpp
   src/io/archive_glob.cpp
+  src/io/win32.cpp
   src/io/overlay_posix.cpp
   src/overlay.cpp
   src/overlay/cow.cpp

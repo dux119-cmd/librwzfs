@@ -196,3 +196,9 @@ if(RWZFS_BUILD_TESTS)
     gtest_discover_tests(rwzfs_tests)
   endif()
 endif()
+
+# Example program (docs/USAGE.md): create, mount, write, revise. Needs dwarfs and POSIX.
+if(RWZFS_WITH_DWARFS AND NOT WIN32 AND RWZFS_BUILD_TESTS)
+  add_executable(rwzfs_example examples/usage.cpp)
+  target_link_libraries(rwzfs_example PRIVATE rwzfs)
+endif()

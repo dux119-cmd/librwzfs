@@ -94,6 +94,9 @@ ctest --preset default                               # rebuilds the test archive
 Run tests through CTest, not the test binary directly, so the archive fixture is regenerated.
 `mkdwarfs` must be in `DWARFS_PREFIX/bin` or on `PATH`.
 
+## Documentation for users
+- `docs/USAGE.md`: create, mount, use the wrappers, revise. Worked example in `examples/usage.cpp` (built by CMake with dwarfs; output in the guide).
+
 ## Layout
 - `include/rwzfs/` public headers (`fs/`, `io/`, `archive/`, `mount.hpp`)
 - `src/` implementations (`src/archive/dwarfs_backend.cpp` is the only dwarfs-dependent backend file)

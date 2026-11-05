@@ -65,26 +65,6 @@ jobs:
           xcode-select -p
           clang++ --version
 
-      - name: Probe libc++ for std::chrono::from_stream (macOS)
-        if: runner.os == 'macOS'
-        # dwarfs needs this function. If the selected libc++ lacks it, fail here with a clear
-        # message instead of deep inside the dwarfs build.
-        run: |
-          cat > probe.cpp << 'PROBE'
-          #include <chrono>
-          #include <sstream>
-          int main() {
-            std::istringstream iss("2020");
-            std::chrono::system_clock::time_point tp;
-            std::chrono::from_stream(iss, "%Y", tp);
-            return 0;
-          }
-          PROBE
-          if ! clang++ -std=c++23 -stdlib=libc++ probe.cpp -o probe; then
-            echo "The selected libc++ has no std::chrono::from_stream. Pick a newer Xcode."
-            exit 1
-          fi
-
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -96,13 +76,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.DWARFS_PREFIX }}
-          key: dwarfs-${{ matrix.os }}-${{ env.DWARFS_REF }}
+          # bump the suffix when ci/patch_dwarfs_apple.py changes
+          key: dwarfs-${{ matrix.os }}-${{ env.DWARFS_REF }}-apple-p1
 
       - name: Build dwarfs
         if: steps.cache-dwarfs.outputs.cache-hit != 'true'
         run: |
           if [ "$RUNNER_OS" = Linux ]; then CC=gcc-14; CXX=g++-14; else CC=cc; CXX=c++; fi
           git clone --depth 1 --branch "$DWARFS_REF" https://github.com/mhx/dwarfs.git dwarfs-src
+          if [ "$RUNNER_OS" = macOS ]; then python3 "$GITHUB_WORKSPACE/ci/patch_dwarfs_apple.py" dwarfs-src; fi
           cmake -S dwarfs-src -B dwarfs-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
             -DWITH_TESTS=OFF -DWITH_FUSE_DRIVER=OFF -DWITH_DESKTOP_INTEGRATION=OFF \

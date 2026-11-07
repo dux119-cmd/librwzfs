@@ -97,6 +97,9 @@ Run tests through CTest, not the test binary directly, so the archive fixture is
 ## Documentation for users
 - `docs/USAGE.md`: create, mount, use the wrappers, revise. Worked example in `examples/usage.cpp` (built by CMake with dwarfs; output in the guide).
 
+## Benchmark
+- `docs/BENCHMARK.md`: `rwzfs_bench compare` runs the read benchmark on the host tree and the mounted archive, with statistics and a comparison. The reduced run is verified here; the full 4.4 GB run needs a machine with ~10 GB of RAM.
+
 ## Layout
 - `include/rwzfs/` public headers (`fs/`, `io/`, `archive/`, `mount.hpp`)
 - `src/` implementations (`src/archive/dwarfs_backend.cpp` is the only dwarfs-dependent backend file)

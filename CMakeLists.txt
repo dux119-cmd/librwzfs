@@ -201,4 +201,7 @@ endif()
 if(RWZFS_WITH_DWARFS AND NOT WIN32 AND RWZFS_BUILD_TESTS)
   add_executable(rwzfs_example examples/usage.cpp)
   target_link_libraries(rwzfs_example PRIVATE rwzfs)
+  # Read benchmark (docs/BENCHMARK.md): host tree vs mounted archive.
+  add_executable(rwzfs_bench examples/bench_read.cpp)
+  target_link_libraries(rwzfs_bench PRIVATE rwzfs)
 endif()

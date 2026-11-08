@@ -23,11 +23,33 @@ afterwards (`git diff`).
      `fopen` → `rwzfs::io::stdio::fopen`, `CreateFileW` → `rwzfs::io::win32::create_file`, and so on
      (the full list is in the script);
    - `#include "rwzfs/io/<family>.hpp"` is added after the last include, for each family the file uses;
-   - C headers are dropped when none of their symbols remain (`<fcntl.h>`, `<unistd.h>`,
-     `<sys/stat.h>`, `<dirent.h>`, `<cstdio>`, and others). A header is kept if anything it provides is
-     still used.
+   - C headers are dropped from `.cpp` files when none of their symbols remain (`<fcntl.h>`,
+     `<unistd.h>`, `<sys/stat.h>`, `<dirent.h>`, `<cstdio>`, and others). Headers (`.hpp`, `.h`) never
+     lose an include, since files that include them may rely on it.
 4. **Writes a report**: rewritten call counts, headers added and dropped, every skipped call site with
    file and line, and everything that needs a person.
+
+## The report, by category
+
+The report keeps three kinds of result apart, so the list you must act on is short:
+
+- **Rewritten.** The calls that were changed, by function name.
+- **Not calls to wrap (counted).** Declarations and definitions (`int read(int);`, `bool write(...)` in
+  a class), member or class-qualified names (`Foo::read(...)`, `std_fs::remove(...)` when
+  listed as "qualified by another namespace"), and std algorithms with a C name (`std::remove` on a
+  container). These are correct as they are. Only the count is shown.
+- **Skipped (needs a decision).** Each one is listed with its file and line, grouped by reason.
+  The reasons you will see:
+  - *C header not included*: the name is common (`read`, `write`, `stat`, `fopen`) and no C header
+    that declares it is reachable from the file. The script follows quoted includes through project
+    headers, so a header that includes `<cstdio>` counts for every file that includes it. If this still
+    appears, the call probably is not the C function.
+  - *without an error_code: throws; port by hand*: a `std::filesystem` call that throws in the standard
+    form. This is the real manual work: add an `std::error_code` and check it.
+
+Also listed under "needs a person", once per file: C sources (convert or shim), C++ file streams (the
+library's stream wrappers return failed streams for archive paths), and `std::filesystem` calls that
+are not in `rwzfs::fs`.
 
 ## What it leaves alone, and why
 

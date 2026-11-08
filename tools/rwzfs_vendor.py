@@ -121,6 +121,7 @@ class Report:
     headers_added: dict[str, list[str]] = field(default_factory=dict)
     headers_dropped: dict[str, list[str]] = field(default_factory=dict)
     skipped: list[tuple[str, int, str, str]] = field(default_factory=list)  # file, line, name, why
+    not_calls: dict[str, int] = field(default_factory=dict)                # counted, not listed
     manual: list[str] = field(default_factory=list)
     cmake_notes: list[str] = field(default_factory=list)
 
@@ -162,7 +163,8 @@ def _is_declaration(prefix: str) -> bool:
     if stripped.endswith(("*", "&")):
         return True
     m = re.search(r"([A-Za-z_]\w*)$", stripped)
-    if m and m.group(1) not in KEYWORDS_BEFORE_CALL and stripped != m.group(1):
+    # A word before the name (a type, or a class/struct scope) makes it a declaration.
+    if m and m.group(1) not in KEYWORDS_BEFORE_CALL:
         return True
     return False
 
@@ -202,14 +204,14 @@ def rewrite_calls(text: str, path: str, report: Report, has: dict[str, bool]) ->
             q = m.group("q") or ""
             prefix = line[:m.start()]
             if not q and m.start() >= 2 and line[m.start() - 2:m.start()] == "::":
-                # qualified by another namespace (std_fs::remove, fs::rename): not a C call
-                report.skipped.append((path, lineno, name, "qualified by another namespace"))
+                # qualified by another namespace or class (std_fs::remove, Foo::read): not a C call
+                report.not_calls["qualified by another namespace or class"] = report.not_calls.get("qualified by another namespace or class", 0) + 1
                 continue
             if _is_declaration(prefix) and not q:
-                report.skipped.append((path, lineno, name, "looks like a declaration"))
+                report.not_calls["declaration or definition"] = report.not_calls.get("declaration or definition", 0) + 1
                 continue
             if name in ALGORITHM_CONFLICT and q == "std::":
-                report.skipped.append((path, lineno, name, "std algorithm of the same name"))
+                report.not_calls["std algorithm (std::%s)" % name] = report.not_calls.get("std algorithm (std::%s)" % name, 0) + 1
                 continue
             family = None
             if name in WIN32_FUNCS:
@@ -347,23 +349,60 @@ def drop_includes(text: str, path: str, report: Report) -> str:
 
 
 def manual_findings(text: str, path: str, report: Report) -> None:
+    """One note per file and kind. Filesystem calls that were already listed as skipped are not
+    repeated here."""
+    skipped_lines = {ln for f, ln, _n, _w in report.skipped if f == path}
+    stream_seen = fs_seen = False
     for i, line in enumerate(text.split("\n"), start=1):
         if "#include" in line:
             continue
-        if re.search(r"\bstd::(i|o)?fstream\b", line):
-            report.manual.append(f"{path}:{i}: C++ stream (std::fstream family): use rwzfs::io::stdio::input_file_stream/output_file_stream only after review; archive streams are failed streams")
-        if re.search(r"\b(std::filesystem|std_fs)::(?!path\b)\w+", line) and "rwzfs::fs::" not in line:
-            report.manual.append(f"{path}:{i}: std::filesystem call left as is (see skipped list or it is not in rwzfs::fs)")
-        if re.search(r"\bfopen\s*\(|\bfread\s*\(", line) and "rwzfs::" not in line:
-            pass
+        if not stream_seen and re.search(r"\bstd::(i|o)?fstream\b", line):
+            report.manual.append(f"{path}: C++ file streams (std::ifstream/ofstream) are not rewritten. Use rwzfs::io::stdio::input_file_stream/output_file_stream after review: an archive path gives a failed stream.")
+            stream_seen = True
+        if not fs_seen and i not in skipped_lines and re.search(r"\b(std::filesystem|std_fs)::(?!path\b)\w+", line) and "rwzfs::fs::" not in line:
+            report.manual.append(f"{path}: std::filesystem calls that are not in rwzfs::fs or are not rewritten. Check by hand.")
+            fs_seen = True
 
 
-def process_source(path: Path, rel: str, report: Report, dry: bool) -> str | None:
+QUOTED_INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.MULTILINE)
+SYS_INCLUDE = re.compile(r'^\s*#\s*include\s*<([^>]+)>', re.MULTILINE)
+
+
+def system_includes_reachable(path: Path, root: Path, cache: dict[Path, set[str]],
+                              stack: tuple[Path, ...] = ()) -> set[str]:
+    """System headers included by `path` directly or through project headers (quoted includes that
+    resolve inside the project). A C header counts as available if any reachable file includes it:
+    the file compiles with it, even if it does not include it itself."""
+    path = path.resolve()
+    if path in cache:
+        return cache[path]
+    if path in stack or len(stack) > 12 or not path.is_file():
+        return set()
+    try:
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+    except OSError:
+        return set()
+    found = set(SYS_INCLUDE.findall(text))
+    for inc in QUOTED_INCLUDE.findall(text):
+        for base in (path.parent, root, root / "src", root / "include"):
+            candidate = (base / inc).resolve()
+            if candidate.is_file() and root in candidate.parents:
+                found |= system_includes_reachable(candidate, root, cache, stack + (path,))
+                break
+    cache[path] = found
+    return found
+
+
+def process_source(path: Path, rel: str, report: Report, dry: bool,
+                   root: Path | None = None, inc_cache: dict | None = None) -> str | None:
     text = path.read_text(encoding="utf-8", errors="surrogateescape")
     if path.suffix == ".c" or (path.suffix == ".h" and not CXX_HINT.search(text)):
-        report.manual.append(f"{rel}: C source or C-only header: the library is C++ only; convert it or add a C++ shim")
+        report.manual.append(f"{rel}: C source: the library is C++ only. Convert the file to C++ or add a C++ shim.")
         return None
-    includes = {m.group(1) for l in text.split("\n") if (m := HEADER_RE.match(l))}
+    if root is not None and inc_cache is not None:
+        includes = system_includes_reachable(path, root, inc_cache)
+    else:
+        includes = {m.group(1) for l in text.split("\n") if (m := HEADER_RE.match(l))}
     has = {"includes": includes}
     for fam, headers in (("posix", POSIX_HEADERS), ("stdio", STDIO_HEADERS)):
         has["any:" + fam] = False
@@ -375,7 +414,10 @@ def process_source(path: Path, rel: str, report: Report, dry: bool) -> str | Non
         new, added = add_includes(new, families_used(new))
         if added:
             report.headers_added.setdefault(rel, []).extend(added)
-    new = drop_includes(new, rel, report)
+    # Only .cpp-style sources drop includes. A header's includes reach the files that include it, so
+    # they are never dropped there.
+    if path.suffix.lower() in {".cpp", ".cc", ".cxx", ".c++"}:
+        new = drop_includes(new, rel, report)
     manual_findings(new, rel, report)
     if new == text:
         return None
@@ -473,11 +515,20 @@ def write_report(report: Report, path: Path | None, root: Path) -> str:
     for f, hs in sorted(report.headers_dropped.items()):
         lines.append(f"  {f}: {', '.join(hs)}")
     lines.append("")
-    lines.append(f"skipped call sites ({len(report.skipped)}): review these by hand")
-    for f, ln, name, why in report.skipped[:500]:
-        lines.append(f"  {f}:{ln}: {name}  ({why})")
-    if len(report.skipped) > 500:
-        lines.append(f"  ... {len(report.skipped) - 500} more")
+    lines.append("not calls to wrap (counted, correctly left alone):")
+    for why, n in sorted(report.not_calls.items(), key=lambda kv: -kv[1]):
+        lines.append(f"  {why}: {n}")
+    lines.append("")
+    by_reason: dict[str, list[tuple[str, int, str]]] = {}
+    for f, ln, name, why in report.skipped:
+        by_reason.setdefault(why, []).append((f, ln, name))
+    lines.append(f"skipped call sites ({len(report.skipped)}), grouped by reason:")
+    for why, items in sorted(by_reason.items(), key=lambda kv: -len(kv[1])):
+        lines.append(f"  [{why}] {len(items)}")
+        for f, ln, name in items[:200]:
+            lines.append(f"    {f}:{ln}: {name}")
+        if len(items) > 200:
+            lines.append(f"    ... {len(items) - 200} more")
     lines.append("")
     lines.append("needs a person:")
     for m in report.manual[:500]:
@@ -527,9 +578,10 @@ def main(argv: list[str]) -> int:
 
     excludes = DEFAULT_EXCLUDES | set(args.exclude)
     diffs = []
+    inc_cache: dict = {}
     for path in scan(root, excludes, args.libdir):
         rel = str(path.relative_to(root))
-        d = process_source(path, rel, report, args.dry_run)
+        d = process_source(path, rel, report, args.dry_run, root, inc_cache)
         if d:
             diffs.append(d)
     if args.dry_run and args.diff:

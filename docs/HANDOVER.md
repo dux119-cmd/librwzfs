@@ -77,6 +77,7 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 - `getcwd` with an archive working directory and a null buffer returns `EINVAL`.
 - Archive stdio streams hold the whole file in memory.
 - Overlay: directory permissions, access times, symlink creation and symlink rename are not implemented. Directory rename copies the whole tree.
+- The stdio and POSIX wrappers are not `[[nodiscard]]` (they mirror C).
 - Stdio write opens (`fopen` with `w`, `a`, `+`) copy the file up at open, not on the first write.
 - Archive creation and revision run the mkdwarfs CLI. They are POSIX only; Windows returns `unsupported_platform`.
 - Revision holds the whole flattened tree in a scratch directory, so its disk use is at least the size of the merged view. Deferring this needs `fopencookie`/`funopen`, which are not portable to all platforms (Windows has neither), so it is a permanent limitation of the stdio layer.
@@ -99,6 +100,9 @@ Run tests through CTest, not the test binary directly, so the archive fixture is
 
 ## Benchmark
 - `docs/BENCHMARK.md`: `rwzfs_bench compare` runs the read benchmark on the host tree and the mounted archive, with statistics and a comparison. The reduced run is verified here; the full 4.4 GB run needs a machine with ~10 GB of RAM.
+
+## Using rwzfs in an existing project
+- `docs/VENDORING.md` and `tools/rwzfs_vendor.py`: vendor the library into a CMake C++ project and switch its IO calls to the wrappers. The report lists what needs a person. Tested on a sample project.
 
 ## Layout
 - `include/rwzfs/` public headers (`fs/`, `io/`, `archive/`, `mount.hpp`)

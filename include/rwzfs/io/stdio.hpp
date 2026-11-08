@@ -7,23 +7,23 @@
 namespace rwzfs::io::stdio {
 
 // STDIO-01 (295x)
-[[nodiscard]] std::size_t fread(void* buf, std::size_t size, std::size_t count, std::FILE* stream);
+std::size_t fread(void* buf, std::size_t size, std::size_t count, std::FILE* stream);
 // STDIO-02 (68x). Archive files open read-only. Write modes fail with EROFS.
 // An archive stream owns a private in-memory copy of the file. Close it with fclose below.
-[[nodiscard]] std::FILE* fopen(const char* path, const char* mode);
+std::FILE* fopen(const char* path, const char* mode);
 // STDIO-09 (new). Closes any stream. Required for archive streams, which own a buffer.
 int fclose(std::FILE* stream);
 // STDIO-03 (80x)
-[[nodiscard]] long ftell(std::FILE* stream);
+long ftell(std::FILE* stream);
 // STDIO-04 (12x)
-[[nodiscard]] int fflush(std::FILE* stream);
+int fflush(std::FILE* stream);
 // STDIO-05 (21x) C `remove`, distinct from `fs::remove`.
-[[nodiscard]] int remove(const char* path);
+int remove(const char* path);
 // STDIO-06 (1x) C `rename`, distinct from `fs::rename`.
-[[nodiscard]] int rename(const char* from, const char* to);
+int rename(const char* from, const char* to);
 // STDIO-07 (2x)
-[[nodiscard]] std::ifstream input_file_stream(const std::string& path);
+std::ifstream input_file_stream(const std::string& path);
 // STDIO-08 (2x)
-[[nodiscard]] std::ofstream output_file_stream(const std::string& path);
+std::ofstream output_file_stream(const std::string& path);
 
 }  // namespace rwzfs::io::stdio

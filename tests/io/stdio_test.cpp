@@ -117,3 +117,16 @@ TEST_F(StdioIo, OutputStreamForArchivePathIsFailed) {
   EXPECT_FALSE(out.is_open());
   EXPECT_TRUE(out.fail());
 }
+
+TEST_F(StdioIo, FwriteAndFseekOnHostFile) {
+  const auto out = dir_.path() / "seek.bin";
+  std::FILE* fp = stdio::fopen(out.string().c_str(), "w+b");
+  ASSERT_NE(fp, nullptr);
+  EXPECT_EQ(stdio::fwrite("abcdef", 1, 6, fp), 6u);
+  EXPECT_EQ(stdio::fseek(fp, 2, SEEK_SET), 0);
+  EXPECT_EQ(stdio::fwrite("XY", 1, 2, fp), 2u);
+  EXPECT_EQ(stdio::fseek(fp, 0, SEEK_END), 0);
+  EXPECT_EQ(stdio::ftell(fp), 6L);
+  EXPECT_EQ(stdio::fclose(fp), 0);
+  EXPECT_EQ(fs::file_size(out), 6u);
+}

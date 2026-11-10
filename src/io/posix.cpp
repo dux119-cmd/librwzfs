@@ -78,6 +78,8 @@ int open(const char* path, int flags, mode_t mode) {
   return ::open(p->c_str(), flags, mode);
 }
 
+int open(const char* path, int flags) { return open(path, flags, 0666); }
+
 int stat(const char* path, struct stat* buf) {
   const auto p = resolved(path);
   if (!p) return -1;
@@ -85,6 +87,22 @@ int stat(const char* path, struct stat* buf) {
     return r->overlay.empty() ? aio::stat(*r, buf) : ov::stat(*r, buf);
   }
   return ::stat(p->c_str(), buf);
+}
+
+int ioctl(int fd, unsigned long request) {
+  if (ov::owns(fd) || aio::is_fd(fd)) {
+    errno = ENOTTY;
+    return -1;
+  }
+  return ::ioctl(fd, request);
+}
+
+int ioctl(int fd, unsigned long request, int arg) {
+  if (ov::owns(fd) || aio::is_fd(fd)) {
+    errno = ENOTTY;
+    return -1;
+  }
+  return ::ioctl(fd, request, arg);
 }
 
 int ioctl(int fd, unsigned long request, void* arg) {

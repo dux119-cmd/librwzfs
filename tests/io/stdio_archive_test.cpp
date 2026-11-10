@@ -115,3 +115,20 @@ TEST_F(StdioArchive, RemoveAndRenameOnArchiveFailWithErofs) {
 }
 
 #endif  // !defined(_WIN32)
+
+TEST_F(StdioArchive, FseekRepositionsArchiveStream) {
+  std::FILE* fp = stdio::fopen(kFile, "rb");
+  ASSERT_NE(fp, nullptr);
+  EXPECT_EQ(stdio::fseek(fp, 3, SEEK_SET), 0);
+  char buf[4] = {};
+  EXPECT_EQ(stdio::fread(buf, 1, 4, fp), 4u);
+  EXPECT_EQ(std::string(buf, 4), "load");
+  EXPECT_EQ(stdio::fclose(fp), 0);
+}
+
+TEST_F(StdioArchive, FwriteToArchiveStreamWritesNothing) {
+  std::FILE* fp = stdio::fopen(kFile, "rb");
+  ASSERT_NE(fp, nullptr);
+  EXPECT_EQ(stdio::fwrite("zz", 1, 2, fp), 0u);  // read-only stream
+  EXPECT_EQ(stdio::fclose(fp), 0);
+}

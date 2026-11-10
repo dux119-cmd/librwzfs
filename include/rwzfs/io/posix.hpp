@@ -23,10 +23,17 @@ ssize_t read(int fd, void* buf, std::size_t count);
 ssize_t write(int fd, const void* buf, std::size_t count);
 // POSIX-04 (34x)
 int open(const char* path, int flags, mode_t mode);
+// C's open is variadic: callers pass the mode only when creating. Without a mode, 0666 is used
+// for creation (the usual default).
+int open(const char* path, int flags);
 // POSIX-05 (30x)
 int stat(const char* path, struct stat* buf);
 // POSIX-06 (23x)
 int ioctl(int fd, unsigned long request, void* arg);
+// C's ioctl is variadic. These cover the forms callers use: no argument, an integer argument,
+// and a pointer argument (the void* overload above).
+int ioctl(int fd, unsigned long request);
+int ioctl(int fd, unsigned long request, int arg);
 // POSIX-07 (22x) `seek`, mapped to lseek. Confirm against the call site.
 off_t lseek(int fd, off_t offset, int whence);
 // POSIX-08 (2x)

@@ -40,7 +40,7 @@ POSIX_FUNCS = {
     "realpath", "opendir", "readdir", "closedir", "mkdir", "rmdir", "truncate", "access",
     "getcwd", "glob", "chdir", "chmod", "utimensat",
 }
-STDIO_FUNCS = {"fopen", "fread", "ftell", "fflush", "fclose", "remove", "rename"}
+STDIO_FUNCS = {"fopen", "fread", "fwrite", "fseek", "fseeko", "ftello", "ftell", "fflush", "fclose", "remove", "rename"}
 WIN32_FUNCS = {
     "CreateFileW": "create_file", "ReadFile": "read_file", "SetFilePointer": "set_file_pointer",
     "FindFirstFileW": "find_first_file", "CreateDirectoryW": "create_directory",
@@ -52,7 +52,7 @@ WIN32_FUNCS = {
 AMBIGUOUS = {"open", "close", "read", "write", "remove", "rename", "stat", "access", "glob",
              "mkdir", "chmod", "truncate", "ioctl", "unlink", "rmdir", "readdir", "opendir",
              "closedir", "lseek", "fsync", "realpath", "getcwd", "chdir", "mmap", "utimensat",
-             "fopen", "fread", "ftell", "fflush", "fclose"}
+             "fopen", "fread", "fwrite", "fseek", "fseeko", "ftello", "ftell", "fflush", "fclose"}
 POSIX_HEADERS = {"fcntl.h", "unistd.h", "sys/stat.h", "dirent.h", "sys/mman.h", "sys/ioctl.h",
                  "glob.h", "sys/time.h", "time.h", "sys/types.h", "stdlib.h", "limits.h"}
 STDIO_HEADERS = {"stdio.h", "cstdio"}

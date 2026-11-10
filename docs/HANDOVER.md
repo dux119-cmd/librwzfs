@@ -37,7 +37,7 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 | POSIX wrappers | POSIX-01..20 | Implemented, tested. Archive: overlay-backed when mounted with an overlay. `glob` over the merged view (no GLOB_APPEND/BRACE/TILDE). |
 | FS queries | FS-01..24 | Implemented, tested. `exists`, `status`, `is_*`, `canonical`, `equivalent`, `is_empty`, `read_symlink` work on archives. Mutations `EROFS`. `last_write_time`, `space`, `proximate` `not_supported`. |
 | Directory iterators | FS-09, FS-18 | Implemented, tested. Classes with the standard interface. |
-| Stdio wrappers | STDIO-01..09 | Implemented, tested. Archive files: read-only in-memory copy. |
+| Stdio wrappers | STDIO-01..13 (`fwrite`, `fseek`, `fseeko`, `ftello` added for vendoring) | Implemented, tested. Archive files: read-only in-memory copy. |
 | Win32 wrappers | WIN-01..05 (+ `close_handle`) | Implemented (Windows only, compiled by the Windows CI job; not yet run). Host paths call Win32; archive paths fail with `ERROR_NOT_SUPPORTED`. |
 
 ## Build and test settings
@@ -68,12 +68,12 @@ A cross-platform (Linux, macOS, BSD, Windows) C++23 library. Applications call i
 1. **Verify the CI workflow** on GitHub Actions for all three platforms. Windows Win32 wrappers and the Windows lock and metadata are compiled and tested for the first time there.
 2. **Win32 archive access.** Route Win32 calls on archive paths to the archive and overlay (currently `ERROR_NOT_SUPPORTED`).
 3. **Creation without the mkdwarfs CLI** (library writer), if the process-spawn dependency becomes a problem.
-4. **Streaming for large archive files** through stdio, blocked on a portable `fopencookie`/`funopen` replacement. Accepted as a limitation: stdio archive reads copy the whole file.
+4. **funopen path (macOS/FreeBSD)** is compiled but not yet run: check the macOS CI job. Windows still copies at open for stdio write-opens.
 5. **Directory permission storage** in the overlay.
 
 ## Known limitations
 - `input_file_stream` and `output_file_stream` return failed streams for archive paths. A C++ stream cannot wrap an in-memory copy.
-- `ioctl` is declared with one `void*` argument. Variadic callers must be checked.
+- `open` and `ioctl` have the C call forms: `open(path, flags)`, and `ioctl` with no argument, an integer, or a pointer. Other variadic forms are not covered, and `fcntl` is not wrapped yet.
 - `getcwd` with an archive working directory and a null buffer returns `EINVAL`.
 - Archive stdio streams hold the whole file in memory.
 - Overlay: directory permissions, access times, symlink creation and symlink rename are not implemented. Directory rename copies the whole tree.

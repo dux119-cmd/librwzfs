@@ -97,6 +97,32 @@ TEST_F(PosixIo, WriteThenReadBack) {
   posix::close(fd);
 }
 
+TEST_F(PosixIo, TwoArgumentOpenReadsFile) {
+  const int fd = posix::open(file_.c_str(), O_RDONLY);  // C-style call without a mode
+  ASSERT_GE(fd, 0);
+  EXPECT_EQ(read_fd(fd, kReadBuf), "hello");
+  posix::close(fd);
+}
+
+TEST_F(PosixIo, TwoArgumentOpenCreatesFileWithDefaultMode) {
+  const auto path = dir_.path() / "made.txt";
+  const int fd = posix::open(path.c_str(), O_WRONLY | O_CREAT);
+  ASSERT_GE(fd, 0);
+  posix::close(fd);
+  EXPECT_TRUE(fs::exists(path));
+}
+
+TEST_F(PosixIo, IoctlWithIntegerArgumentForwards) {
+  // FIONREAD takes a pointer; this checks the integer overload forwards its argument. An
+  // unsupported request on a regular file fails with ENOTTY.
+  const int fd = posix::open(file_.c_str(), O_RDONLY);
+  ASSERT_GE(fd, 0);
+  errno = 0;
+  EXPECT_EQ(posix::ioctl(fd, 0x5401 /* TCGETS */, 0), -1);
+  EXPECT_EQ(errno, ENOTTY);
+  posix::close(fd);
+}
+
 TEST_F(PosixIo, CloseBadDescriptorFailsWithEbadf) {
   errno = 0;
   EXPECT_EQ(posix::close(-1), -1);

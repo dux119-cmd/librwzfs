@@ -1,0 +1,430 @@
+#if !defined(_WIN32)
+
+#include "../support/fake_backend.hpp"
+#include "../support/platform_paths.hpp"
+#include <gtest/gtest.h>
+
+#include <array>
+#include <cerrno>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <dirent.h>
+#include <fcntl.h>
+#include <filesystem>
+#include <fstream>
+#include <glob.h>
+#include <memory>
+#include <string>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include "../fs/test_support.hpp"
+#include "rwzfs/fs/cwd.hpp"
+#include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/io/posix.hpp"
+
+namespace fs     = std::filesystem;
+namespace posix  = rwz::posix;
+namespace mounts = rwz::fs::mounts;
+namespace rfs    = rwz::fs;
+
+namespace {
+
+constexpr std::size_t kReadBuf     = 16;
+constexpr std::size_t kTinyBuf     = 4;
+constexpr std::size_t kPathBuf     = 4096;
+constexpr std::size_t kHelloSize   = 5;
+constexpr const char* kArchiveFile = RWZ_ROOT "/a.txt";
+constexpr const char* kArchiveDir  = RWZ_ROOT "/sub";
+
+std::string read_fd(int fd, std::size_t n)
+{
+	std::string out(n, '\0');
+	const auto got = posix::read(fd, out.data(), n);
+	out.resize(got < 0 ? 0 : static_cast<std::size_t>(got));
+	return out;
+}
+
+} // namespace
+
+class PosixIo : public ::testing::Test {
+protected:
+	void SetUp() override
+	{
+		original_ = fs::current_path();
+		mounts::clear();
+		rfs::cwd::clear();
+		ASSERT_TRUE(mounts::add(RWZ_ROOT ""));
+		file_ = dir_.path() / "file.txt";
+		std::ofstream(file_) << "hello";
+	}
+	void TearDown() override
+	{
+		rfs::cwd::clear();
+		mounts::clear();
+		std::error_code ec;
+		fs::current_path(original_, ec);
+	}
+
+	fs::path original_;
+	TempDir dir_;
+	fs::path file_;
+};
+
+// Descriptors (POSIX-01, 02, 03, 07, 18)
+
+TEST_F(PosixIo, OpenReadCloseRoundTrip)
+{
+	const int fd = posix::open(file_.c_str(), O_RDONLY, 0);
+	ASSERT_GE(fd, 0);
+	EXPECT_EQ(read_fd(fd, kReadBuf), "hello");
+	EXPECT_EQ(posix::close(fd), 0);
+}
+
+TEST_F(PosixIo, SeekRewindsForRereading)
+{
+	const int fd = posix::open(file_.c_str(), O_RDONLY, 0);
+	ASSERT_GE(fd, 0);
+	EXPECT_EQ(read_fd(fd, kReadBuf), "hello");
+	EXPECT_EQ(posix::lseek(fd, 0, SEEK_SET), 0);
+	EXPECT_EQ(read_fd(fd, kReadBuf), "hello");
+	posix::close(fd);
+}
+
+TEST_F(PosixIo, WriteThenReadBack)
+{
+	const auto path = dir_.path() / "out.txt";
+	const int fd    = posix::open(path.c_str(), O_RDWR | O_CREAT, 0600);
+	ASSERT_GE(fd, 0);
+	EXPECT_EQ(posix::write(fd, "abc", 3), 3);
+	EXPECT_EQ(posix::lseek(fd, 0, SEEK_SET), 0);
+	EXPECT_EQ(read_fd(fd, kReadBuf), "abc");
+	EXPECT_EQ(posix::fsync(fd), 0);
+	posix::close(fd);
+}
+
+TEST_F(PosixIo, TwoArgumentOpenReadsFile)
+{
+	const int fd = posix::open(file_.c_str(), O_RDONLY); // C-style call
+	                                                     // without a mode
+	ASSERT_GE(fd, 0);
+	EXPECT_EQ(read_fd(fd, kReadBuf), "hello");
+	posix::close(fd);
+}
+
+TEST_F(PosixIo, TwoArgumentOpenCreatesFileWithDefaultMode)
+{
+	const auto path = dir_.path() / "made.txt";
+	const int fd    = posix::open(path.c_str(), O_WRONLY | O_CREAT);
+	ASSERT_GE(fd, 0);
+	posix::close(fd);
+	EXPECT_TRUE(fs::exists(path));
+}
+
+TEST_F(PosixIo, IoctlWithIntegerArgumentForwards)
+{
+	// FIONREAD takes a pointer; this checks the integer overload forwards
+	// its argument. An unsupported request on a regular file fails with
+	// ENOTTY.
+	const int fd = posix::open(file_.c_str(), O_RDONLY);
+	ASSERT_GE(fd, 0);
+	errno = 0;
+	EXPECT_EQ(posix::ioctl(fd, 0x5401 /* TCGETS */, 0), -1);
+	EXPECT_EQ(errno, ENOTTY);
+	posix::close(fd);
+}
+
+TEST_F(PosixIo, CloseBadDescriptorFailsWithEbadf)
+{
+	errno = 0;
+	EXPECT_EQ(posix::close(-1), -1);
+	EXPECT_EQ(errno, EBADF);
+}
+
+TEST_F(PosixIo, IoctlFionreadReportsRemainingBytes)
+{
+	const int fd = posix::open(file_.c_str(), O_RDONLY, 0);
+	ASSERT_GE(fd, 0);
+	int remaining = -1;
+	EXPECT_EQ(posix::ioctl(fd, FIONREAD, &remaining), 0);
+	EXPECT_EQ(remaining, static_cast<int>(kHelloSize));
+	posix::close(fd);
+}
+
+TEST_F(PosixIo, MmapHostFileReadsContent)
+{
+	const int fd = posix::open(file_.c_str(), O_RDONLY, 0);
+	ASSERT_GE(fd, 0);
+	void* mapped = posix::mmap(nullptr, kHelloSize, PROT_READ, MAP_PRIVATE, fd, 0);
+	ASSERT_NE(mapped, MAP_FAILED);
+	EXPECT_EQ(std::string(static_cast<const char*>(mapped), kHelloSize), "hello");
+	::munmap(mapped, kHelloSize);
+	posix::close(fd);
+}
+
+// Paths (POSIX-04, 05, 08, 10, 14-17, 20). Host paths pass; archive paths fail
+// ENOTSUP.
+
+TEST_F(PosixIo, OpenArchivePathFailsWithEnotsup)
+{
+	errno = 0;
+	EXPECT_EQ(posix::open(kArchiveFile, O_RDONLY, 0), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, OpenRelativeUnderArchiveCwdFailsWithEnotsup)
+{
+	ASSERT_TRUE(rfs::cwd::set_archive_cwd(kArchiveDir));
+	errno = 0;
+	EXPECT_EQ(posix::open("x.txt", O_RDONLY, 0), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, StatHostFileReportsSize)
+{
+	struct stat st{};
+	EXPECT_EQ(posix::stat(file_.c_str(), &st), 0);
+	EXPECT_EQ(st.st_size, static_cast<off_t>(kHelloSize));
+}
+
+TEST_F(PosixIo, StatArchivePathFailsWithEnotsup)
+{
+	struct stat st{};
+	errno = 0;
+	EXPECT_EQ(posix::stat(kArchiveFile, &st), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, StatRelativeUnderArchiveCwdFailsWithEnotsup)
+{
+	ASSERT_TRUE(rfs::cwd::set_archive_cwd(kArchiveDir));
+	struct stat st{};
+	errno = 0;
+	EXPECT_EQ(posix::stat("file.txt", &st), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, UnlinkHostFileRemovesIt)
+{
+	EXPECT_EQ(posix::unlink(file_.c_str()), 0);
+	EXPECT_FALSE(fs::exists(file_));
+}
+
+TEST_F(PosixIo, UnlinkArchivePathFailsWithEnotsup)
+{
+	errno = 0;
+	EXPECT_EQ(posix::unlink(kArchiveFile), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, MkdirAndRmdirHostDirectory)
+{
+	const auto sub = dir_.path() / "sub";
+	EXPECT_EQ(posix::mkdir(sub.c_str(), 0700), 0);
+	EXPECT_TRUE(fs::is_directory(sub));
+	EXPECT_EQ(posix::rmdir(sub.c_str()), 0);
+	EXPECT_FALSE(fs::exists(sub));
+}
+
+TEST_F(PosixIo, MkdirArchivePathFailsWithEnotsup)
+{
+	errno = 0;
+	EXPECT_EQ(posix::mkdir(RWZ_ROOT "/new", 0700), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, RmdirArchivePathFailsWithEnotsup)
+{
+	errno = 0;
+	EXPECT_EQ(posix::rmdir(kArchiveDir), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, TruncateHostFile)
+{
+	EXPECT_EQ(posix::truncate(file_.c_str(), 2), 0);
+	EXPECT_EQ(fs::file_size(file_), 2u);
+}
+
+TEST_F(PosixIo, TruncateArchivePathFailsWithEnotsup)
+{
+	errno = 0;
+	EXPECT_EQ(posix::truncate(kArchiveFile, 0), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, AccessHostFileSucceeds)
+{
+	EXPECT_EQ(posix::access(file_.c_str(), F_OK), 0);
+}
+
+TEST_F(PosixIo, AccessMissingHostFileFailsWithEnoent)
+{
+	errno = 0;
+	EXPECT_EQ(posix::access((dir_.path() / "missing").c_str(), F_OK), -1);
+	EXPECT_EQ(errno, ENOENT);
+}
+
+TEST_F(PosixIo, OpendirReadsEntriesThenCloses)
+{
+	DIR* dir = posix::opendir(dir_.path().c_str());
+	ASSERT_NE(dir, nullptr);
+	bool found = false;
+	while (const struct dirent* entry = posix::readdir(dir)) {
+		if (std::strcmp(entry->d_name, "file.txt") == 0) {
+			found = true;
+		}
+	}
+	EXPECT_TRUE(found);
+	EXPECT_EQ(posix::closedir(dir), 0);
+}
+
+TEST_F(PosixIo, OpendirArchivePathFailsWithEnotsup)
+{
+	errno = 0;
+	EXPECT_EQ(posix::opendir(RWZ_ROOT ""), nullptr);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, RealpathHostPathMatchesCanonical)
+{
+	std::array<char, kPathBuf> buf{};
+	ASSERT_NE(posix::realpath(file_.c_str(), buf.data()), nullptr);
+	EXPECT_EQ(fs::path(buf.data()), fs::canonical(file_));
+}
+
+TEST_F(PosixIo, RealpathArchivePathFailsWithEnotsup)
+{
+	std::array<char, kPathBuf> buf{};
+	errno = 0;
+	EXPECT_EQ(posix::realpath(kArchiveFile, buf.data()), nullptr);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+TEST_F(PosixIo, GlobHostPatternMatches)
+{
+	std::ofstream(dir_.path() / "b.log") << "x";
+	const auto pattern = (dir_.path() / "*.txt").string();
+	glob_t matches{};
+	ASSERT_EQ(posix::glob(pattern.c_str(), 0, nullptr, &matches), 0);
+	EXPECT_EQ(matches.gl_pathc, 1u);
+	globfree(&matches);
+}
+
+TEST_F(PosixIo, GlobArchivePatternAbortsWithEnotsup)
+{
+	glob_t matches{};
+	errno = 0;
+	EXPECT_EQ(posix::glob(RWZ_ROOT "/*.txt", 0, nullptr, &matches), GLOB_ABORTED);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+// Working directory (CWD-03, CWD-04)
+
+TEST_F(PosixIo, GetcwdPassesThroughWithoutArchiveCwd)
+{
+	rfs::cwd::clear();
+	std::array<char, kPathBuf> buf{};
+	ASSERT_NE(posix::getcwd(buf.data(), buf.size()), nullptr);
+	EXPECT_EQ(fs::path(buf.data()), fs::current_path());
+}
+
+TEST_F(PosixIo, GetcwdReturnsArchiveCwd)
+{
+	ASSERT_TRUE(rfs::cwd::set_archive_cwd(kArchiveDir));
+	std::array<char, 64> buf{};
+	ASSERT_NE(posix::getcwd(buf.data(), buf.size()), nullptr);
+	EXPECT_STREQ(buf.data(), kArchiveDir);
+}
+
+TEST_F(PosixIo, GetcwdTooSmallFailsWithErange)
+{
+	ASSERT_TRUE(rfs::cwd::set_archive_cwd(kArchiveDir));
+	std::array<char, kTinyBuf> buf{};
+	errno = 0;
+	EXPECT_EQ(posix::getcwd(buf.data(), buf.size()), nullptr);
+	EXPECT_EQ(errno, ERANGE);
+}
+
+TEST_F(PosixIo, GetcwdNullBufferWithArchiveCwdAllocates)
+{
+	ASSERT_TRUE(rfs::cwd::set_archive_cwd(kArchiveDir));
+	char* p = posix::getcwd(nullptr, 0);
+	ASSERT_NE(p, nullptr);
+	EXPECT_EQ(std::string(p), std::string(kArchiveDir));
+	std::free(p);
+}
+
+TEST_F(PosixIo, GetcwdTooSmallArchiveBufferIsErange)
+{
+	ASSERT_TRUE(rfs::cwd::set_archive_cwd(kArchiveDir));
+	char small[4];
+	errno = 0;
+	EXPECT_EQ(posix::getcwd(small, sizeof(small)), nullptr);
+	EXPECT_EQ(errno, ERANGE);
+	EXPECT_EQ(posix::getcwd(nullptr, 1), nullptr);
+	EXPECT_EQ(errno, ERANGE);
+}
+
+TEST_F(PosixIo, FcntlOnArchiveDescriptorReportsReadOnlyAndRefusesLocks)
+{
+	// Mount an archive for this test: the fixture's root has no archive
+	// behind it.
+	mounts::clear();
+	auto backend = std::make_shared<fake_backend>();
+	backend->add_file("DIR/FILE.DAT", "payload");
+	fs::create_directories(dir_.path() / "ov");
+	ASSERT_TRUE(mounts::add(RWZ_ROOT, backend, dir_.path() / "ov"));
+	const int fd = posix::open(RWZ_ROOT "/DIR/FILE.DAT", O_RDONLY, 0);
+	ASSERT_GE(fd, 0);
+	EXPECT_EQ(posix::fcntl(fd, F_GETFL), O_RDONLY);
+	EXPECT_EQ(posix::fcntl(fd, F_GETFD), 0);
+	EXPECT_EQ(posix::fcntl(fd, F_SETFD, FD_CLOEXEC), 0);
+	errno = 0;
+	EXPECT_EQ(posix::fcntl(fd, F_SETLK, nullptr), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+	posix::close(fd);
+}
+
+TEST_F(PosixIo, FcntlOnHostDescriptorPassesThrough)
+{
+	const int fd = posix::open((dir_.path() / "x.txt").c_str(),
+	                           O_RDWR | O_CREAT,
+	                           0644);
+	ASSERT_GE(fd, 0);
+	const int flags = posix::fcntl(fd, F_GETFL);
+	ASSERT_GE(flags, 0);
+	EXPECT_NE(flags & O_RDWR, 0);
+	posix::close(fd);
+}
+
+TEST_F(PosixIo, ChdirIntoArchiveFailsWithEnotsup)
+{
+	ASSERT_TRUE(rfs::cwd::set_archive_cwd(kArchiveDir));
+	errno = 0;
+	EXPECT_EQ(posix::chdir(RWZ_ROOT "/other"), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+	EXPECT_EQ(rfs::cwd::archive_cwd(), fs::path(kArchiveDir));
+}
+
+TEST_F(PosixIo, ChdirToHostSucceedsAndClearsArchiveCwd)
+{
+	ASSERT_TRUE(rfs::cwd::set_archive_cwd(kArchiveDir));
+	EXPECT_EQ(posix::chdir(dir_.path().c_str()), 0);
+	EXPECT_FALSE(rfs::cwd::archive_cwd().has_value());
+	std::array<char, kPathBuf> buf{};
+	ASSERT_NE(posix::getcwd(buf.data(), buf.size()), nullptr);
+	EXPECT_EQ(fs::canonical(buf.data()), fs::canonical(dir_.path()));
+}
+
+TEST_F(PosixIo, RelativeOpenRoutesAfterMount)
+{
+	errno = 0;
+	EXPECT_EQ(posix::open("DIR/FILE.DAT", O_RDONLY, 0), -1);
+	EXPECT_EQ(errno, ENOTSUP);
+}
+
+#endif // !defined(_WIN32)

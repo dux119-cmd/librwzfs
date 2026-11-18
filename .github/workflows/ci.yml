@@ -1,0 +1,197 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Library without dwarfs: builds and tests on every platform. Covers the path, host IO,
+  # overlay, lock, creation and revision logic. Archive mounting is compiled out.
+  unit:
+    name: unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DRWZFS_WITH_DWARFS=OFF -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure --parallel
+
+  # Full library with dwarfs built from source (Linux and macOS). Windows is not included yet:
+  # the dwarfs Windows build has not been verified.
+  full:
+    name: full (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    env:
+      DEPS_PREFIX: ${{ github.workspace }}/deps-install
+      DWARFS_PREFIX: ${{ github.workspace }}/dwarfs-install
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only build tools come from the package manager. Every library (dwarfs and its
+      # dependencies) is built from pinned sources by scripts/deps, so CI and users get the same bits.
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 ninja-build pkg-config cmake
+
+      - name: Select Xcode (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$xcode" ]; then
+            echo "No Xcode installed. Installed:"; ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$xcode"
+          xcode-select -p
+          clang++ --version
+
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja pkg-config cmake
+
+      # Two caches, so a dwarfs-only change does not rebuild the dependencies, and a dependency
+      # that built before a later failure is kept. The keys hash the scripts, which pin every version:
+      # changing a version rebuilds that library and everything after it.
+      - name: Cache static dependencies
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DEPS_PREFIX }}
+          key: rwz-deps-${{ matrix.os }}-${{ hashFiles('scripts/deps/build-deps.sh') }}-p1
+
+      - name: Build static dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        env:
+          DEPS_WORK: ${{ github.workspace }}/deps-work
+          WITH_TESTS: 1
+        run: bash scripts/deps/build-deps.sh
+
+      - name: Cache static dwarfs
+        id: cache-dwarfs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DWARFS_PREFIX }}
+          key: rwz-dwarfs-${{ matrix.os }}-${{ hashFiles('scripts/deps/build-deps.sh', 'scripts/deps/build-dwarfs.sh', 'scripts/deps/patch-dwarfs-apple.py') }}-p1
+
+      - name: Build static dwarfs
+        if: steps.cache-dwarfs.outputs.cache-hit != 'true'
+        env:
+          DWARFS_WORK: ${{ github.workspace }}/dwarfs-work
+        run: bash scripts/deps/build-dwarfs.sh
+
+      - name: Configure rwzfs
+        env:
+          PKG_CONFIG_PATH: ${{ env.DEPS_PREFIX }}/lib/pkgconfig
+        run: >
+          cmake -S . -B build
+          -DDWARFS_PREFIX="$DWARFS_PREFIX"
+          -DCMAKE_PREFIX_PATH="$DEPS_PREFIX"
+          -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure --parallel -E rwzfs_example
+
+      - name: Showcase (host tree, mounted archive, writes, revision)
+        run: ctest --test-dir build -C Release --output-on-failure -R rwzfs_example
+
+      - name: Backtrace of the creator test's throws (Linux, on failure)
+        if: failure() && runner.os == 'Linux'
+        # Stops at each C++ throw in the creator test and prints the top frames, then the
+        # frames that mention "optional" (the bad_optional_access source) are shown in full.
+        run: |
+          sudo apt-get install -y gdb
+          cmd=(gdb -batch -ex 'set pagination off' -ex 'catch throw' -ex run)
+          for i in $(seq 40); do cmd+=(-ex 'bt 15' -ex continue); done
+          cmd+=(--args build/rwzfs_tests --gtest_filter='CreateView.*')
+          "${cmd[@]}" > gdb.log 2>&1 || true
+          grep -n -i "optional" gdb.log | head -n 40 || true
+          echo "---- first 15 throws (top frames) ----"
+          grep -n "^#" gdb.log | head -n 300 || true
+
+  # Static dependencies and dwarfs built with MSVC (Git Bash runs the scripts). rwzfs itself is not
+  # built here yet: its archive creator and merged view still use POSIX directory calls.
+  deps-windows:
+    name: static deps and dwarfs (windows)
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEPS_PREFIX: ${{ github.workspace }}/deps-install
+      DWARFS_PREFIX: ${{ github.workspace }}/dwarfs-install
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install build tools
+        shell: pwsh
+        run: |
+          choco install -y ninja pkgconfiglite strawberryperl
+          # OpenSSL's Configure needs a complete perl. Put Strawberry Perl first on PATH.
+          echo "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Cache static dependencies
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DEPS_PREFIX }}
+          key: rwz-deps-windows-${{ hashFiles('scripts/deps/build-deps.sh') }}-p1
+
+      - name: Build static dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        env:
+          DEPS_WORK: ${{ github.workspace }}/deps-work
+          WITH_TESTS: 1
+        run: bash scripts/deps/build-deps.sh
+
+      - name: Cache static dwarfs
+        id: cache-dwarfs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DWARFS_PREFIX }}
+          key: rwz-dwarfs-windows-${{ hashFiles('scripts/deps/build-deps.sh', 'scripts/deps/build-dwarfs.sh', 'scripts/deps/patch-dwarfs-apple.py') }}-p1
+
+      - name: Build static dwarfs
+        if: steps.cache-dwarfs.outputs.cache-hit != 'true'
+        env:
+          DWARFS_WORK: ${{ github.workspace }}/dwarfs-work
+        run: bash scripts/deps/build-dwarfs.sh
+
+      # The rwzfs library itself, with the dwarfs writer and reader. Tests stay off: the dwarfs test
+      # sources still call POSIX functions.
+      - name: Configure rwzfs (windows)
+        env:
+          PKG_CONFIG_LIBDIR: ${{ env.DEPS_PREFIX }}/lib/pkgconfig
+        run: >
+          cmake -S . -B build -DRWZFS_WITH_DWARFS=ON
+          -DDWARFS_PREFIX="$DWARFS_PREFIX" -DCMAKE_PREFIX_PATH="$DEPS_PREFIX"
+
+      - name: Build rwzfs (windows)
+        run: cmake --build build --config Release --parallel
+
+      - name: Test (windows)
+        run: ctest --test-dir build -C Release --output-on-failure --parallel -E rwzfs_example
+
+      - name: Showcase (windows)
+        run: ctest --test-dir build -C Release --output-on-failure -R rwzfs_example

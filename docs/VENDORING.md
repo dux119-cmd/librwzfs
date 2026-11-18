@@ -1,0 +1,141 @@
+# Vendoring rwzfs into an existing project
+
+`tools/rwzfs_vendor.py` takes a CMake C++ project and switches its IO calls to rwzfs, interactively,
+one change per git commit. Bisecting then finds the exact replacement that introduced a problem.
+
+    git switch -c vendor-rwzfs                     # a branch of your own
+    python3 tools/rwzfs_vendor.py <project-root> --branch vendor-rwzfs --dry-run   # list the sites
+    python3 tools/rwzfs_vendor.py <project-root>                                   # the real run
+
+Python 3.9 or newer, standard library only. The project must be a git work tree. The tool refuses a
+dirty tree (commit or stash first, or pass `--allow-dirty`).
+
+## The flow
+
+1. **Library** (one commit): copies the library to `<libdir>` (default `src/libs/rwzfs`) and links it
+   to the top-level targets. Asked once.
+2. **Headers** (one commit): the rwzfs headers the replacements need, for every file, before any code
+   changes.
+3. **Replacements** (one commit each): for each call or type the tool can replace, it shows the file,
+   line, original text, replacement and reason, and asks `[y]es / [n]o (skip) / [q]uit`. A yes applies
+   that one change and commits it.
+4. **Sites that need a person** (one commit each, when you save): the tool shows a suggested signature
+   and waits. Edit the file in your editor, save, and press Enter; the file's changes are committed.
+   `s` skips the site, `q` quits.
+5. **Unused C headers** (one commit each): `[y]es / [n]o / [q]uit`.
+
+Every commit message holds the generated record: file and line, original text, replacement, reason,
+and the line before and after. Commit subjects name the change, so `git log --oneline` reads as the
+list of replacements, and `git bisect` lands on the first bad one.
+
+You can stop at any time (`q`) and rerun later: committed changes stay, and the tool rescans for what
+remains. Skipped sites are not offered again in one run.
+
+## Options
+
+| option | meaning |
+|---|---|
+| `--branch NAME` | create and switch to a new branch first |
+| `--dry-run` | list the sites and change nothing |
+| `--libdir DIR` | where the library goes (default `src/libs/rwzfs`) |
+| `--with-dwarfs` | link the dwarfs-backed reader (needs dwarfs installed) |
+| `--library PATH` | the rwzfs source tree to copy (default: the tree this script is in) |
+| `--exclude DIR ...` | extra directories to skip |
+| `--allow-dirty` | run with uncommitted changes |
+
+## Names
+
+Replacements use the flat namespaces of `rwzfs/rwz.hpp`:
+
+- `rwz::posix::` (POSIX), `rwz::win32::` (Windows), `rwz::stdio::` and `rwz::fs::`
+
+Each file that needs one gets a single `#include "rwzfs/rwz.hpp"`.
+
+## Local definitions
+
+Before replacing a call, the tool scans the whole project for functions with the same name. A project
+that defines or declares its own `read`, `write`, `open` and so on (for example, I/O-port emulation)
+gets those calls listed as sites that need a person, with the file and line of the definition. A call
+the tool cannot tie to a definition (a return type on an earlier line, for instance) is still
+replaced, so check the dry run for names that look local.
+
+## Rules it applies
+
+1. **Copies the library** (`include/`, `src/`, `CMakeLists.txt`, `LICENSE`) to `<root>/src/libs/rwzfs`
+   (change with `--libdir`). An existing copy there is replaced.
+2. **Edits the top-level `CMakeLists.txt`**: appends a block that sets `RWZFS_WITH_DWARFS` (off unless
+   `--with-dwarfs`), turns off the library's tests and examples, adds the library subdirectory, and
+   adds `target_link_libraries(<target> PRIVATE rwzfs)` for each `add_executable`/`add_library` in that
+   file. The block is marked, and it is not added twice.
+3. **Rewrites sources.** Every `.cpp`, `.cc`, `.cxx`, `.hpp`, `.h` (C++ headers) and similar file under
+   the project, except `build*`, `.git`, `external/`, `third_party/` and the vendored library:
+   - calls to standard and POSIX IO functions become library wrappers: `open` → `rwz::posix::open`,
+     `fopen` → `rwz::stdio::fopen`, `CreateFileW` → `rwz::win32::create_file`, and so on
+     (the full list is in the script);
+   - `#include "rwzfs/io/<family>.hpp"` is added after the last include, for each family the file uses;
+   - C headers are dropped from `.cpp` files when none of their symbols remain (`<fcntl.h>`,
+     `<unistd.h>`, `<sys/stat.h>`, `<dirent.h>`, `<cstdio>`, and others). Headers (`.hpp`, `.h`) never
+     lose an include, since files that include them may rely on it.
+4. **Writes a report**: rewritten call counts, headers added and dropped, every skipped call site with
+   file and line, and everything that needs a person.
+
+## Sites that need a person
+
+Each site the tool cannot replace with confidence is shown with a suggested signature, for example
+`rwz::fs::exists(p, ec)` for a `std::filesystem` call without an error code. Edit the file, save, and
+press Enter. The tool commits the file's changes as one commit with the generated message. Those sites
+are typically:
+- `std::filesystem` calls without an `std::error_code` (the standard form throws);
+- an unqualified C name (`read`, `write`, `open`) whose header is not included in the file, which may be
+  another function with the same name;
+- `remove` or `rename` whose first argument does not look like a path;
+- stream `open()` / `close()` members, which have no rwzfs equivalent.
+
+## What it leaves alone, and why
+
+A call is skipped (and listed) when:
+- it is a member call (`x.read(...)`, `p->open(...)`);
+- it looks like a declaration or definition (`int read(int);`, `struct R { int read(); }`);
+- it is inside a string literal or a comment;
+- its name is common (`open`, `read`, `write`, `close`, `remove`, `rename`, ...) and the file does not
+  include the C header that declares it. Without that header the call is probably someone else's;
+- it is `std::remove` or `std::rename` with an argument that does not look like a path. Those are
+  algorithms and erase-remove idioms.
+
+Nothing is rewritten in C sources (`.c`). The library is C++ only; those files are listed in the report.
+
+Anything the script does not rewrite is still a correct program: the original call keeps calling the
+host C library, and it does not go through the archive.
+
+## What it cannot do, and what a person must check
+
+- **std::filesystem.** The namespace `std::filesystem` is recognised under its full name, under the
+  project shorthand `std_fs`, and under any alias declared in the file as
+  `namespace X = std::filesystem;` (or `= std_fs;`). A call that already passes an error code
+  (`std_fs::exists(p, ec)`) is rewritten to `rwz::fs::exists(p, ec)`: the name changes and nothing
+  else does. A call without an error code throws in the standard form, so the script leaves it and lists
+  it in the report: port it by hand, adding an `std::error_code` and checking it. Type names such as
+  `std_fs::path` are never changed (`rwz::fs::path` is the same type).
+- **C++ streams.** `std::ifstream` and `std::ofstream` declarations are rewritten to
+  `rwz::stdio::file_istream` and `file_ostream`. Member `open()` and `close()` have no equivalent:
+  construct a new stream instead. Those calls are listed in the report.
+- **C++23.** The library needs C++23 (`std::expected`). The script warns when `CMAKE_CXX_STANDARD` is
+  below 23. The library sets 23 for its own targets; the project's targets that include library headers
+  must also use 23.
+- **Targets in subdirectories.** Only targets declared in the top-level `CMakeLists.txt` are linked
+  automatically. Add `target_link_libraries(<t> PRIVATE rwzfs)` for the others.
+- **Regex, not a parser.** The rewrite works line by line. Multi-line comments and string literals that
+  contain code are the places where it can be wrong. Review the diff.
+- **Windows.** `win32::` mappings compile only on Windows, and the Win32 layer is covered by the Windows CI job. The vendoring script itself has not been run on a Windows project.
+
+## Library behaviour changes for drop-in use
+
+- The stdio and POSIX wrappers are not `[[nodiscard]]`, because they mirror C functions whose results are
+  often ignored (`fread`, `write`).
+
+## Tested
+
+The tool was run on a small git project with an `open`, `read`, `fopen`, `fclose`, `std::remove`,
+`close` and an unused header. Each replacement was one commit with its generated message; the header
+commit came before the code commits; the manual site, edited by hand, was committed as one commit. The
+result built with CMake. The rwzfs side of the replacements is covered by the library's own tests.

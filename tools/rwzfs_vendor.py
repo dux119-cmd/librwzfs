@@ -1,0 +1,1198 @@
+#!/usr/bin/env python3
+"""Vendor rwzfs into an existing CMake C++ project, one replacement per git commit.
+
+The tool walks the project and proposes each change in turn:
+
+  1. Library vendoring (commit): copies the library to <libdir> and links it to the project's
+     top-level targets. Asked once, then committed.
+  2. Header additions (commit): the rwzfs headers the replacements need, one commit for all files.
+  3. Replacements (one commit each): for every call or type it can replace, it shows the change and
+     asks [y]es / [n]o / [q]uit. A "yes" applies that one change and commits it, with a generated
+     message holding the original text, the replacement and the reason. Bisecting then lands on the
+     exact change that introduced a problem.
+  4. Sites that need a person (no known replacement, or a call that may be another function): the
+     tool shows a suggested replacement signature. Edit the file in your editor, save, then press
+     Enter; the file's changes are committed as one commit. 's' skips the site, 'q' quits.
+  5. Unused C headers, one commit per removal.
+
+Git is required. Start from a clean tree (or pass --allow-dirty), ideally on a new branch
+(--branch). The tool stops and resumes cleanly: committed changes stay, and a rerun finds the
+remaining sites.
+
+usage:
+  rwzfs_vendor.py <project-root> [--libdir src/libs/rwzfs] [--with-dwarfs] [--library PATH]
+                  [--exclude DIR ...] [--branch NAME] [--allow-dirty] [--dry-run]
+
+Stdlib only. Python 3.9+.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+# ---- library mapping -------------------------------------------------------
+
+POSIX_FUNCS = {
+    "open",
+    "close",
+    "read",
+    "write",
+    "lseek",
+    "fsync",
+    "stat",
+    "ioctl",
+    "unlink",
+    "mmap",
+    "realpath",
+    "opendir",
+    "readdir",
+    "closedir",
+    "mkdir",
+    "rmdir",
+    "truncate",
+    "access",
+    "getcwd",
+    "glob",
+    "chdir",
+    "chmod",
+    "utimensat",
+}
+STDIO_FUNCS = {
+    "fopen",
+    "fread",
+    "fwrite",
+    "fseek",
+    "fseeko",
+    "ftello",
+    "ftell",
+    "fflush",
+    "fclose",
+    "remove",
+    "rename",
+}
+WIN32_FUNCS = {
+    "CreateFileW": "create_file",
+    "ReadFile": "read_file",
+    "SetFilePointer": "set_file_pointer",
+    "FindFirstFileW": "find_first_file",
+    "CreateDirectoryW": "create_directory",
+    "CloseHandle": "close_handle",
+}
+
+# Functions whose names are common in other code. Unqualified calls are rewritten only when the
+# file includes the C header that declares them (the family's headers below).
+AMBIGUOUS = {
+    "open",
+    "close",
+    "read",
+    "write",
+    "remove",
+    "rename",
+    "stat",
+    "access",
+    "glob",
+    "mkdir",
+    "chmod",
+    "truncate",
+    "ioctl",
+    "unlink",
+    "rmdir",
+    "readdir",
+    "opendir",
+    "closedir",
+    "lseek",
+    "fsync",
+    "realpath",
+    "getcwd",
+    "chdir",
+    "mmap",
+    "utimensat",
+    "fopen",
+    "fread",
+    "fwrite",
+    "fseek",
+    "fseeko",
+    "ftello",
+    "ftell",
+    "fflush",
+    "fclose",
+}
+POSIX_HEADERS = {
+    "fcntl.h",
+    "unistd.h",
+    "sys/stat.h",
+    "dirent.h",
+    "sys/mman.h",
+    "sys/ioctl.h",
+    "glob.h",
+    "sys/time.h",
+    "time.h",
+    "sys/types.h",
+    "stdlib.h",
+    "limits.h",
+}
+STDIO_HEADERS = {"stdio.h", "cstdio"}
+
+# Remove-style names that are also std algorithms: std::remove/std::rename are never rewritten.
+ALGORITHM_CONFLICT = {"remove", "rename"}
+PATHLIKE = re.compile(
+    r'^\s*(?:"|[A-Za-z_][\w.]*(?:path|file|name|dir|str)\b)', re.IGNORECASE
+)
+
+KEYWORDS_BEFORE_CALL = {
+    "return",
+    "else",
+    "case",
+    "throw",
+    "co_return",
+    "do",
+    "new",
+    "delete",
+    "sizeof",
+    "not",
+    "and",
+    "or",
+    "if",
+    "while",
+    "for",
+    "switch",
+    "co_await",
+    "typename",
+    "using",
+    "decltype",
+}
+
+# C headers that the rewritten calls make unnecessary, and the symbols that keep them.
+HEADER_SYMBOLS = {
+    "stdio.h": r"\b(printf|fprintf|sprintf|snprintf|vsnprintf|vprintf|vfprintf|puts|fputs|fputc|putc|"
+    r"putchar|getc|getchar|fgetc|fgets|gets|scanf|sscanf|fscanf|perror|fwrite|fseek|"
+    r"rewind|feof|ferror|clearerr|setvbuf|tmpfile|BUFSIZ|EOF|FILE|stdin|stdout|stderr|"
+    r"SEEK_SET|SEEK_CUR|SEEK_END|fpos_t|ungetc|setbuf|fgetpos|fsetpos)\b",
+    "cstdio": None,  # same as stdio.h
+    "fcntl.h": r"(?<![:\w.>])(O_[A-Z]+|F_OK|R_OK|W_OK|X_OK|F_GETFL|F_SETFL|F_GETFD|F_SETFD|FD_CLOEXEC|creat|fcntl)\b",
+    "unistd.h": r"(?<![:\w.>])(close|read|write|lseek|access|getcwd|chdir|unlink|rmdir|fsync|sleep|"
+    r"usleep|getpid|STDIN_FILENO|STDOUT_FILENO|STDERR_FILENO|F_OK|R_OK|W_OK|X_OK|"
+    r"SEEK_SET|SEEK_CUR|SEEK_END|sysconf|getuid|geteuid|isatty)\b",
+    "sys/stat.h": r"(\bstruct\s+stat\b|\bS_I[A-Z]+\b|(?<![:\w.>])(mkdir|chmod|fstat|lstat|stat)\b\s*\()",
+    "dirent.h": r"(\bDIR\b|\bdirent\b|(?<![:\w.>])(opendir|readdir|closedir)\b\s*\()",
+    "sys/types.h": r"\b(mode_t|off_t|ssize_t|pid_t|uid_t|gid_t|dev_t|ino_t|nlink_t)\b",
+    "sys/mman.h": r"(?<![:\w.>])(mmap|munmap|mprotect|msync)\b\s*\(|\b(PROT_[A-Z]+|MAP_[A-Z]+)\b",
+    "sys/ioctl.h": r"(?<![:\w.>])ioctl\b\s*\(|\bFIO[A-Z]+\b",
+    "glob.h": r"\bglob_t\b|(?<![:\w.>])(glob|globfree)\b\s*\(|\bGLOB_[A-Z]+\b",
+    "fstream": r"\b(i|o)?fstream\b",
+}
+HEADER_SYMBOLS["cstdio"] = HEADER_SYMBOLS["stdio.h"]
+
+# std::filesystem functions the library provides as rwz::fs (same names, error_code last).
+FS_FUNCS = {
+    "exists",
+    "status",
+    "copy",
+    "create_directories",
+    "is_regular_file",
+    "is_directory",
+    "absolute",
+    "canonical",
+    "directory_iterator",
+    "is_empty",
+    "permissions",
+    "is_symlink",
+    "equivalent",
+    "current_path",
+    "read_symlink",
+    "create_directory",
+    "space",
+    "recursive_directory_iterator",
+    "proximate",
+    "last_write_time",
+    "remove_all",
+    "resize_file",
+    "remove",
+    "rename",
+}
+# Namespace names that always mean std::filesystem in the project (shorthand), plus any alias
+# declared in the file as `namespace X = std::filesystem;`.
+FS_NAMESPACES = {"std::filesystem", "std_fs"}
+FS_ALIAS_DECL = re.compile(r"namespace\s+(\w+)\s*=\s*(?:std::filesystem|std_fs)\s*;")
+EC_NAME = re.compile(r"(?i)(^|_)(ec|err|error|code)(_|$)|ec$")
+
+# Every replacement uses the flat namespaces of rwzfs/rwz.hpp: rwz::posix, rwz::stdio, rwz::win32, rwz::fs.
+RWZ_HEADER = "rwzfs/rwz.hpp"
+INCLUDE_FOR_FAMILY = {
+    "posix": RWZ_HEADER,
+    "stdio": RWZ_HEADER,
+    "win32": RWZ_HEADER,
+    "fs": RWZ_HEADER,
+}
+STREAM_TYPES = {
+    "std::ifstream": "rwz::stdio::file_istream",
+    "std::ofstream": "rwz::stdio::file_ostream",
+}
+
+HEADER_RE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]')
+
+SOURCE_EXTS = {
+    ".cpp",
+    ".cc",
+    ".cxx",
+    ".c++",
+    ".hpp",
+    ".hh",
+    ".hxx",
+    ".h++",
+    ".ipp",
+    ".inl",
+    ".h",
+    ".c",
+}
+CPP_ONLY_EXTS = {
+    ".cpp",
+    ".cc",
+    ".cxx",
+    ".c++",
+    ".hpp",
+    ".hh",
+    ".hxx",
+    ".h++",
+    ".ipp",
+    ".inl",
+}
+CXX_HINT = re.compile(
+    r"\b(class|namespace|template|std::|constexpr|nullptr|override|noexcept)\b"
+)
+
+DEFAULT_EXCLUDES = {"build", ".git", "external", "third_party", "src/libs"}
+
+
+# ---- helpers from the whole-file tool
+# std::filesystem functions the library provides as rwz::fs (same names, error_code last).
+FS_FUNCS = {
+    "exists",
+    "status",
+    "copy",
+    "create_directories",
+    "is_regular_file",
+    "is_directory",
+    "absolute",
+    "canonical",
+    "directory_iterator",
+    "is_empty",
+    "permissions",
+    "is_symlink",
+    "equivalent",
+    "current_path",
+    "read_symlink",
+    "create_directory",
+    "space",
+    "recursive_directory_iterator",
+    "proximate",
+    "last_write_time",
+    "remove_all",
+    "resize_file",
+    "remove",
+    "rename",
+}
+# Namespace names that always mean std::filesystem in the project (shorthand), plus any alias
+# declared in the file as `namespace X = std::filesystem;`.
+FS_NAMESPACES = {"std::filesystem", "std_fs"}
+FS_ALIAS_DECL = re.compile(r"namespace\s+(\w+)\s*=\s*(?:std::filesystem|std_fs)\s*;")
+EC_NAME = re.compile(r"(?i)(^|_)(ec|err|error|code)(_|$)|ec$")
+
+
+def _code_mask(line: str) -> list[bool]:
+    """True for each character that is real code (not inside a string, char literal or comment)."""
+    mask = [True] * len(line)
+    i, n = 0, len(line)
+    in_str: str | None = None
+    while i < n:
+        c = line[i]
+        if in_str:
+            mask[i] = False
+            if c == "\\" and i + 1 < n:
+                mask[i + 1] = False
+                i += 2
+                continue
+            if c == in_str:
+                in_str = None
+        else:
+            if c in ('"', "'"):
+                in_str = c
+                mask[i] = False
+            elif c == "/" and i + 1 < n and line[i + 1] == "/":
+                for j in range(i, n):
+                    mask[j] = False
+                break
+        i += 1
+    return mask
+
+
+def _is_declaration(prefix: str) -> bool:
+    """True when the text before a call looks like a declaration or definition of that name."""
+    stripped = prefix.rstrip()
+    if not stripped:
+        return False
+    if stripped.endswith(("*", "&")):
+        return True
+    m = re.search(r"([A-Za-z_]\w*)$", stripped)
+    # A word before the name (a type, or a class/struct scope) makes it a declaration.
+    if m and m.group(1) not in KEYWORDS_BEFORE_CALL:
+        return True
+    return False
+
+
+def _first_arg(text: str, open_paren: int) -> str:
+    depth, start = 0, open_paren + 1
+    for j in range(open_paren, min(len(text), open_paren + 200)):
+        c = text[j]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start:j].split(",")[0]
+        elif c == "," and depth == 1:
+            return text[start:j]
+    return text[start : start + 60]
+
+
+def _last_arg(text: str, open_paren: int) -> str | None:
+    depth = 0
+    last_comma = open_paren
+    for j in range(open_paren, min(len(text), open_paren + 400)):
+        c = text[j]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                return text[last_comma + 1 : j].strip()
+        elif c == "," and depth == 1:
+            last_comma = j
+    return None
+
+
+def families_used(text: str) -> set[str]:
+    fams = set()
+    if "rwz::posix::" in text:
+        fams.add("posix")
+    if "rwz::stdio::" in text:
+        fams.add("stdio")
+    if "rwz::win32::" in text:
+        fams.add("win32")
+    if "rwz::fs::" in text:
+        fams.add("fs")
+    return fams
+
+
+def add_includes(text: str, fams: set[str]) -> tuple[str, list[str]]:
+    """Add the rwz header once, after the last include, if the file does not have it."""
+    headers = sorted({INCLUDE_FOR_FAMILY[f] for f in fams if f in INCLUDE_FOR_FAMILY})
+    wanted = [f'#include "{h}"' for h in headers if f'#include "{h}"' not in text]
+    if not wanted:
+        return text, []
+    lines = text.split("\n")
+    last_include = None
+    for i, l in enumerate(lines):
+        if HEADER_RE.match(l):
+            last_include = i
+    insert_at = (last_include + 1) if last_include is not None else 0
+    lines[insert_at:insert_at] = wanted
+    return "\n".join(lines), wanted
+
+
+QUOTED_INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.MULTILINE)
+SYS_INCLUDE = re.compile(r"^\s*#\s*include\s*<([^>]+)>", re.MULTILINE)
+
+
+def system_includes_reachable(
+    path: Path, root: Path, cache: dict[Path, set[str]], stack: tuple[Path, ...] = ()
+) -> set[str]:
+    """System headers included by `path` directly or through project headers (quoted includes that
+    resolve inside the project). A C header counts as available if any reachable file includes it:
+    the file compiles with it, even if it does not include it itself."""
+    path = path.resolve()
+    if path in cache:
+        return cache[path]
+    if path in stack or len(stack) > 12 or not path.is_file():
+        return set()
+    try:
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+    except OSError:
+        return set()
+    found = set(SYS_INCLUDE.findall(text))
+    for inc in QUOTED_INCLUDE.findall(text):
+        for base in (path.parent, root, root / "src", root / "include"):
+            candidate = (base / inc).resolve()
+            if candidate.is_file() and root in candidate.parents:
+                found |= system_includes_reachable(
+                    candidate, root, cache, stack + (path,)
+                )
+                break
+    cache[path] = found
+    return found
+
+
+def rewrite_stream_types(text: str, rel: str, report: Report) -> str:
+    """std::ifstream / std::ofstream -> rwz::stdio::file_istream / file_ostream. Both derive from
+    std::istream / std::ostream, so references to those keep working. Member open() and close() do
+    not exist on the new types; they are reported."""
+    count = 0
+    for old, new in STREAM_TYPES.items():
+        pattern = re.compile(r"(?<![\w:])" + re.escape(old) + r"\b")
+        text, n = pattern.subn(new, text)
+        count += n
+    if count:
+        report.rewritten["stream types"] = (
+            report.rewritten.get("stream types", 0) + count
+        )
+    for i, line in enumerate(text.split("\n"), 1):
+        if re.search(r"\.(open|close)\s*\(", line) and "file_" not in line:
+            report.manual.append(
+                f"{rel}:{i}: stream open()/close() is not a member of the rwzfs stream types; reopen by constructing a new stream"
+            )
+    return text
+
+
+LIB_COPY_ITEMS = ["include", "src", "CMakeLists.txt", "LICENSE"]
+
+
+def copy_library(lib_src: Path, dest: Path, dry: bool) -> None:
+    if dry:
+        return
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
+    for item in LIB_COPY_ITEMS:
+        src = lib_src / item
+        if not src.exists():
+            continue
+        if src.is_dir():
+            shutil.copytree(src, dest / item)
+        else:
+            shutil.copy2(src, dest / item)
+
+
+TARGET_RE = re.compile(
+    r"^\s*(add_executable|add_library)\s*\(\s*([A-Za-z_][\w.-]*)", re.MULTILINE
+)
+
+
+def patch_cmake(
+    root: Path, libdir: str, with_dwarfs: bool, report: Report, dry: bool
+) -> str:
+    cml = root / "CMakeLists.txt"
+    text = cml.read_text(encoding="utf-8")
+    if "rwzfs (vendored" in text:
+        report.cmake_notes.append(
+            "top-level CMakeLists.txt already contains the rwzfs block; not changed"
+        )
+        return text
+    targets = [m.group(2) for m in TARGET_RE.finditer(text)]
+    dwarfs = "ON" if with_dwarfs else "OFF"
+    block = [
+        "",
+        "# --- rwzfs (vendored, generated by tools/rwzfs_vendor.py) ---",
+        f'set(RWZFS_WITH_DWARFS {dwarfs} CACHE BOOL "Build the dwarfs-backed archive reader")',
+        'set(RWZFS_BUILD_TESTS OFF CACHE BOOL "" FORCE)',
+        'set(RWZFS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)',
+        f"add_subdirectory({libdir})",
+    ]
+    for t in targets:
+        block.append(f"target_link_libraries({t} PRIVATE rwzfs)")
+    block.append("# --- end rwzfs ---")
+    new = text.rstrip("\n") + "\n" + "\n".join(block) + "\n"
+    if not targets:
+        report.cmake_notes.append(
+            "no add_executable/add_library targets found in the top-level CMakeLists.txt: link rwzfs to your targets (target_link_libraries(<t> PRIVATE rwzfs))"
+        )
+    if re.search(r"set\s*\(\s*CMAKE_CXX_STANDARD\s+(1[17]|20)\b", text):
+        report.cmake_notes.append(
+            "CMAKE_CXX_STANDARD is below 23: rwzfs needs C++23 (std::expected). Raise it for the targets that link rwzfs."
+        )
+    if not dry:
+        cml.write_text(new, encoding="utf-8")
+    return new
+
+
+def scan(root: Path, excludes: set[str], libdir: str) -> list[Path]:
+    skip_roots = {(root / e).resolve() for e in excludes | {libdir}}
+    out = []
+    for p in root.rglob("*"):
+        if not p.is_file() or p.suffix.lower() not in SOURCE_EXTS:
+            continue
+        resolved = p.resolve()
+        if any(s == resolved or s in resolved.parents for s in skip_roots):
+            continue
+        out.append(p)
+    return sorted(out)
+
+
+def rewrite_stream_types(text: str, rel: str, report: Report) -> str:
+    """std::ifstream / std::ofstream -> rwz::stdio::file_istream / file_ostream. Both derive from
+    std::istream / std::ostream, so references to those keep working. Member open() and close() do
+    not exist on the new types; they are reported."""
+    count = 0
+    for old, new in STREAM_TYPES.items():
+        pattern = re.compile(r"(?<![\w:])" + re.escape(old) + r"\b")
+        text, n = pattern.subn(new, text)
+        count += n
+    if count:
+        report.rewritten["stream types"] = (
+            report.rewritten.get("stream types", 0) + count
+        )
+    for i, line in enumerate(text.split("\n"), 1):
+        if re.search(r"\.(open|close)\s*\(", line) and "file_" not in line:
+            report.manual.append(
+                f"{rel}:{i}: stream open()/close() is not a member of the rwzfs stream types; reopen by constructing a new stream"
+            )
+    return text
+
+
+@dataclass
+class Site:
+    path: str  # project-relative file
+    line: int  # 1-based
+    col: (
+        int  # 0-based column of `old` in the line (valid for the scan that produced it)
+    )
+    old: str  # text to replace (or the header line to drop)
+    new: str  # replacement, suggestion, or "" for a removal
+    kind: str  # "rewrite" | "manual" | "drop_header"
+    why: str  # reason, shown and recorded in the commit
+    family: str | None = None  # rwzfs header family the replacement needs
+
+
+@dataclass
+class Report:
+    cmake_notes: list[str] = field(default_factory=list)
+    manual: list[str] = field(default_factory=list)
+
+
+def site_key(s: Site) -> tuple:
+    return (s.path, s.line, s.old, s.kind)
+
+
+_NON_TYPE_WORDS = {
+    "return",
+    "if",
+    "else",
+    "while",
+    "for",
+    "switch",
+    "case",
+    "throw",
+    "new",
+    "delete",
+    "sizeof",
+    "do",
+    "co_return",
+    "co_await",
+    "not",
+    "and",
+    "or",
+    "using",
+    "typename",
+}
+
+
+def local_definitions(
+    root: Path, excludes: set[str], libdir: str
+) -> dict[str, list[str]]:
+    """Names of functions defined or declared in the project itself (not the library, not excluded
+    directories), with where. A call of such a name may be the project's own function, not the C one:
+    DOS-emulation code, for example, has its own read() and write() on I/O ports."""
+    names = POSIX_FUNCS | STDIO_FUNCS | set(WIN32_FUNCS)
+    found: dict[str, list[str]] = {}
+    call = re.compile(
+        r"(?<![\w.>:])([A-Za-z_]\w*)\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept\s*)?[{;]"
+    )
+    for path in scan(root, excludes, libdir):
+        rel = str(path.relative_to(root))
+        lines = path.read_text(encoding="utf-8", errors="surrogateescape").split("\n")
+        for lineno, line in enumerate(lines, 1):
+            if "#include" in line or "#define" in line:
+                continue
+            prev = lines[lineno - 2].rstrip() if lineno >= 2 else ""
+            for m in call.finditer(line):
+                name = m.group(1)
+                if name not in names:
+                    continue
+                prefix = line[: m.start()].rstrip()
+                if not prefix:
+                    # the return type may sit on the previous line
+                    typed = (
+                        prev
+                        and re.search(r"[\w*&>]$", prev)
+                        and not prev.endswith((";", "{", "}"))
+                    )
+                    if not typed or prev.split()[-1] in _NON_TYPE_WORDS:
+                        continue
+                else:
+                    last_word = re.search(r"(\w+)$", prefix)
+                    if not (
+                        re.search(r"[\w*&>]$", prefix)
+                        and (
+                            last_word is None
+                            or last_word.group(1) not in _NON_TYPE_WORDS
+                        )
+                    ):
+                        continue
+                found.setdefault(name, []).append(f"{rel}:{lineno}")
+    return found
+
+
+def find_sites(
+    rel: str,
+    text: str,
+    has: set[str],
+    aliases: set[str],
+    local: dict[str, list[str]] | None = None,
+) -> tuple[list[Site], int]:
+    """Every replacement, manual site and stream type in one file. Returns (sites, silent_count)."""
+    sites: list[Site] = []
+    silent = 0
+    names = POSIX_FUNCS | STDIO_FUNCS | set(WIN32_FUNCS)
+    call_re = re.compile(
+        r"(?<![\w.>])(?P<q>(?:std)?::)?(?P<name>"
+        + "|".join(sorted(map(re.escape, names), key=len, reverse=True))
+        + r")\s*\("
+    )
+    prefixes = "|".join(
+        sorted(map(re.escape, aliases | FS_NAMESPACES), key=len, reverse=True)
+    )
+    fs_re = re.compile(
+        r"(?<![\w.>:])(?P<ns>(?:"
+        + prefixes
+        + r"))::(?P<name>"
+        + "|".join(sorted(map(re.escape, FS_FUNCS), key=len, reverse=True))
+        + r")\s*\("
+    )
+    stream_re = re.compile(r"(?<![\w:])(std::(?:i|o)fstream)\b")
+    per_line_old: dict[tuple[int, str], int] = {}
+    for lineno, line in enumerate(text.split("\n"), 1):
+        if "#include" in line or "#define" in line:
+            continue
+        mask = _code_mask(line)
+        for m in call_re.finditer(line):
+            if not mask[m.start("name")]:
+                continue
+            name = m.group("name")
+            q = m.group("q") or ""
+            prefix = line[: m.start()]
+            if (_is_declaration(prefix) and not q) or (
+                not q and m.start() >= 2 and line[m.start() - 2 : m.start()] == "::"
+            ):
+                silent += 1
+                continue
+            if (
+                name in ALGORITHM_CONFLICT
+                and q == "std::"
+                and not PATHLIKE.match(_first_arg(line, m.end() - 1))
+            ):
+                silent += 1  # std::remove(first, last) is the container algorithm, not the C call
+                continue
+            family = (
+                "win32"
+                if name in WIN32_FUNCS
+                else "stdio" if name in STDIO_FUNCS else "posix"
+            )
+            target = (
+                f"rwz::win32::{WIN32_FUNCS[name]}"
+                if family == "win32"
+                else f"rwz::{family}::{name}"
+            )
+            reason = None
+            if not q and local and name in local:
+                where = ", ".join(local[name][:3]) + (
+                    " ..." if len(local[name]) > 3 else ""
+                )
+                reason = (
+                    f"this project defines or declares its own {name}() ({where}); "
+                    f"this call may be that function, not the C one"
+                )
+            if (
+                reason is None
+                and family in ("posix", "stdio")
+                and name in AMBIGUOUS
+                and not q
+            ):
+                headers = POSIX_HEADERS if family == "posix" else STDIO_HEADERS
+                if not any(h in headers for h in has):
+                    reason = "unqualified and its C header is not included here: this may be another function with the same name"
+            if reason is None and name in ALGORITHM_CONFLICT:
+                if not PATHLIKE.match(_first_arg(line, m.end() - 1)):
+                    reason = "the argument does not look like a path: this may be an algorithm"
+            old = m.group(0)
+            key = (lineno, old)
+            occ = per_line_old.get(key, 0)
+            per_line_old[key] = occ + 1
+            if reason:
+                sites.append(
+                    Site(
+                        rel,
+                        lineno,
+                        m.start(),
+                        old,
+                        f"{target}(",
+                        "manual",
+                        reason,
+                        family,
+                    )
+                )
+            else:
+                sites.append(
+                    Site(
+                        rel,
+                        lineno,
+                        m.start(),
+                        old,
+                        f"{target}(",
+                        "rewrite",
+                        f"{name} is a standard call with an rwzfs wrapper",
+                        family,
+                    )
+                )
+        for m in fs_re.finditer(line):
+            if not mask[m.start("name")]:
+                continue
+            name = m.group("name")
+            last = _last_arg(line, m.end() - 1)
+            old = m.group(0)
+            if last is not None and (EC_NAME.search(last) or "error_code" in last):
+                sites.append(
+                    Site(
+                        rel,
+                        lineno,
+                        m.start(),
+                        old,
+                        f"rwz::fs::{name}(",
+                        "rewrite",
+                        "the call already takes an error_code; the rwzfs form has the same signature",
+                        "fs",
+                    )
+                )
+            else:
+                inner = _inner_args(line, m.end() - 1)
+                sep = ", " if inner.strip() else ""
+                sites.append(
+                    Site(
+                        rel,
+                        lineno,
+                        m.start(),
+                        old,
+                        f"rwz::fs::{name}({inner}{sep}ec)",
+                        "manual",
+                        "std::filesystem throws without an error_code: add an std::error_code and check it",
+                        "fs",
+                    )
+                )
+        for m in stream_re.finditer(line):
+            if not mask[m.start(1)]:
+                continue
+            old = m.group(1)
+            new = STREAM_TYPES[old]
+            sites.append(
+                Site(
+                    rel,
+                    lineno,
+                    m.start(1),
+                    old,
+                    new,
+                    "rewrite",
+                    "C++ stream type with an rwzfs stream over the stdio wrappers",
+                    "stdio",
+                )
+            )
+        if "fstream" in line and re.search(r"\.(open|close)\s*\(", line):
+            m = re.search(r"\.(open|close)\s*\(", line)
+            sites.append(
+                Site(
+                    rel,
+                    lineno,
+                    m.start(),
+                    m.group(0),
+                    "construct a new stream with the path instead",
+                    "manual",
+                    "stream member open()/close() has no rwzfs equivalent",
+                    None,
+                )
+            )
+    return sites, silent
+
+
+def _inner_args(text: str, open_paren: int) -> str:
+    depth = 0
+    for j in range(open_paren, min(len(text), open_paren + 400)):
+        c = text[j]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_paren + 1 : j]
+    return ""
+
+
+def drop_sites(rel: str, text: str) -> list[Site]:
+    """C headers whose symbols are no longer used, in a source file (not a header: headers keep theirs)."""
+    if Path(rel).suffix.lower() not in {".cpp", ".cc", ".cxx", ".c++"}:
+        return []
+    lines = text.split("\n")
+    code = "\n".join(l for l in lines if not HEADER_RE.match(l))
+    out: list[Site] = []
+    for lineno, l in enumerate(lines, 1):
+        m = HEADER_RE.match(l)
+        if not (m and m.group(1) in HEADER_SYMBOLS and "<" in l):
+            continue
+        sym = HEADER_SYMBOLS[m.group(1)] or HEADER_SYMBOLS["stdio.h"]
+        if not re.search(sym, code):
+            out.append(
+                Site(
+                    rel,
+                    lineno,
+                    0,
+                    l,
+                    "",
+                    "drop_header",
+                    f"{m.group(1)} is no longer used in this file",
+                    None,
+                )
+            )
+    return out
+
+
+def apply_site(root: Path, s: Site) -> None:
+    p = root / s.path
+    lines = p.read_text(encoding="utf-8", errors="surrogateescape").split("\n")
+    line = lines[s.line - 1]
+    if s.kind == "drop_header":
+        if line != s.old:
+            raise SystemExit(
+                f"{s.path}:{s.line} changed since it was scanned; rerun the tool"
+            )
+        del lines[s.line - 1]
+    else:
+        if line[s.col : s.col + len(s.old)] != s.old:
+            raise SystemExit(
+                f"{s.path}:{s.line} changed since it was scanned; rerun the tool"
+            )
+        lines[s.line - 1] = line[: s.col] + s.new + line[s.col + len(s.old) :]
+    p.write_text("\n".join(lines), encoding="utf-8", errors="surrogateescape")
+
+
+# ---- git -------------------------------------------------------------------
+
+
+def git(
+    root: Path, *args: str, stdin: str | None = None
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(root), *args], input=stdin, text=True, capture_output=True
+    )
+
+
+def require_git(root: Path) -> None:
+    r = git(root, "rev-parse", "--is-inside-work-tree")
+    if r.returncode != 0 or r.stdout.strip() != "true":
+        sys.exit(
+            f"error: {root} is not inside a git work tree. The tool commits each change."
+        )
+
+
+def dirty(root: Path) -> bool:
+    return bool(git(root, "status", "--porcelain").stdout.strip())
+
+
+def commit(root: Path, paths: list[str], subject: str, body: str) -> bool:
+    """Stage exactly `paths` and commit with a generated message. False if nothing changed."""
+    if not paths:
+        return False
+    git(root, "add", "--", *paths)
+    if git(root, "diff", "--cached", "--quiet").returncode == 0:
+        return False
+    message = subject + "\n\n" + body.rstrip() + "\n"
+    r = git(root, "commit", "-q", "-F", "-", stdin=message)
+    if r.returncode != 0:
+        sys.exit(f"error: git commit failed:\n{r.stderr}")
+    print(f"  committed: {subject}")
+    return True
+
+
+def site_body(s: Site, before: str, after: str) -> str:
+    return (
+        "Generated by tools/rwzfs_vendor.py: one replacement per commit, so bisecting can find it.\n\n"
+        f"File:        {s.path}:{s.line}\n"
+        f"Original:    {s.old}\n"
+        f"Replacement: {s.new or '(removed)'}\n"
+        f"Reason:      {s.why}\n\n"
+        f"Line before: {before.strip()}\n"
+        f"Line after:  {after.strip()}\n"
+    )
+
+
+def site_subject(s: Site) -> str:
+    if s.kind == "drop_header":
+        return f"vendor(rwzfs): drop unused {s.old.strip()} from {s.path}"
+    return f"vendor(rwzfs): {s.old.strip()} -> {s.new.strip()} in {s.path}:{s.line}"
+
+
+# ---- prompts ----------------------------------------------------------------
+
+
+def show(root: Path, s: Site) -> None:
+    line = (
+        (root / s.path)
+        .read_text(encoding="utf-8", errors="surrogateescape")
+        .split("\n")[s.line - 1]
+    )
+    print()
+    print(f"  {s.path}:{s.line}   {s.kind}")
+    print(f"    {line.strip()}")
+    if s.kind == "drop_header":
+        print(f"    remove: {s.old.strip()}")
+    else:
+        print(f"    {s.old.strip()}  ->  {s.new.strip()}")
+    print(f"    why: {s.why}")
+
+
+def pick_key(question: str, allow_enter: bool = False) -> str:
+    """Ask a question; the letters in [brackets] are the answers. Returns the letter, or "" for Enter."""
+    allowed = re.findall(r"\[(\w)\]", question)
+    if not allowed:
+        raise SystemExit(f"internal error: no answers offered for: {question}")
+    for _ in range(50):
+        a = input(f"  {question}: ").strip().lower()[:1]
+        if a in allowed or (allow_enter and a == ""):
+            return a
+        print(
+            "  choose one of: "
+            + ", ".join(allowed)
+            + (" or Enter" if allow_enter else "")
+        )
+    raise SystemExit("too many invalid answers; stopped")
+
+
+# ---- main -------------------------------------------------------------------
+
+
+def scan_project(
+    root: Path, libdir: str, excludes: set[str], phase: str
+) -> tuple[list[Site], int]:
+    """All pending sites, in file order. phase is "replace" or "drop"."""
+    inc_cache: dict = {}
+    out: list[Site] = []
+    silent_total = 0
+    local = local_definitions(root, excludes, libdir) if phase == "replace" else {}
+    for path in scan(root, excludes, libdir):
+        rel = str(path.relative_to(root))
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        if path.suffix == ".c" or (path.suffix == ".h" and not CXX_HINT.search(text)):
+            continue
+        if phase == "replace":
+            has = system_includes_reachable(path, root, inc_cache)
+            aliases = set(FS_ALIAS_DECL.findall(text))
+            sites, silent = find_sites(rel, text, has, aliases, local)
+            silent_total += silent
+            out.extend(sites)
+        else:
+            out.extend(drop_sites(rel, text))
+    return out, silent_total
+
+
+def header_commit(root: Path, libdir: str, excludes: set[str]) -> None:
+    """One commit adding every rwzfs include the replacements will need, before any code change."""
+    needed: dict[str, set[str]] = {}
+    local = local_definitions(root, excludes, libdir)
+    for path in scan(root, excludes, libdir):
+        rel = str(path.relative_to(root))
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        if path.suffix == ".c" or (path.suffix == ".h" and not CXX_HINT.search(text)):
+            continue
+        has = system_includes_reachable(path, root, {})
+        sites, _ = find_sites(rel, text, has, set(FS_ALIAS_DECL.findall(text)), local)
+        fams = {s.family for s in sites if s.kind == "rewrite" and s.family}
+        if fams:
+            needed[rel] = fams
+    changed: list[str] = []
+    for rel, fams in sorted(needed.items()):
+        p = root / rel
+        text = p.read_text(encoding="utf-8", errors="surrogateescape")
+        new, added = add_includes(text, fams)
+        if added:
+            p.write_text(new, encoding="utf-8", errors="surrogateescape")
+            changed.append(rel)
+    if changed:
+        body = (
+            "Generated by tools/rwzfs_vendor.py: the rwzfs headers used by the replacements that follow.\n\n"
+            + "\n".join(f"  {rel}" for rel in changed)
+            + "\n"
+        )
+        commit(
+            root,
+            changed,
+            "vendor(rwzfs): include the rwzfs headers the replacements need",
+            body,
+        )
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("project_root", type=Path)
+    ap.add_argument("--libdir", default="src/libs/rwzfs")
+    ap.add_argument(
+        "--library", type=Path, default=Path(__file__).resolve().parent.parent
+    )
+    ap.add_argument("--with-dwarfs", action="store_true")
+    ap.add_argument("--exclude", nargs="*", default=[])
+    ap.add_argument(
+        "--branch", default=None, help="create and switch to this branch first"
+    )
+    ap.add_argument("--allow-dirty", action="store_true")
+    ap.add_argument(
+        "--dry-run", action="store_true", help="list the sites, change nothing"
+    )
+    args = ap.parse_args(argv)
+
+    root = args.project_root.resolve()
+    if not (root / "CMakeLists.txt").is_file():
+        sys.exit(f"error: {root} has no CMakeLists.txt")
+    lib = args.library.resolve()
+    if not (lib / "include" / "rwzfs").is_dir():
+        sys.exit(f"error: {lib} does not look like the rwzfs source tree")
+    require_git(root)
+    excludes = DEFAULT_EXCLUDES | set(args.exclude)
+
+    replace_sites, silent = scan_project(root, args.libdir, excludes, "replace")
+    print(
+        f"sites: {sum(s.kind == 'rewrite' for s in replace_sites)} replacements, "
+        f"{sum(s.kind == 'manual' for s in replace_sites)} need a person; "
+        f"{silent} calls correctly left alone"
+    )
+    if args.dry_run:
+        for s in replace_sites:
+            show(root, s)
+        return 0
+
+    if not args.allow_dirty and dirty(root):
+        sys.exit(
+            "error: the work tree has uncommitted changes. Commit or stash them, or pass --allow-dirty."
+        )
+    if args.branch:
+        r = git(root, "checkout", "-b", args.branch)
+        if r.returncode != 0:
+            sys.exit(f"error: {r.stderr}")
+        print(f"on new branch {args.branch}")
+
+    # 1. library vendoring
+    vendored = (root / args.libdir).is_dir()
+    if not vendored:
+        if (
+            pick_key(
+                "vendor the library and link it to the top-level targets? [y]es / [n]o"
+            ).lower()
+            != "y"
+        ):
+            return 0
+        copy_library(lib, root / args.libdir, False)
+        patch_cmake(root, args.libdir, args.with_dwarfs, Report(), False)
+        commit(
+            root,
+            [args.libdir, "CMakeLists.txt"],
+            f"vendor(rwzfs): add the library at {args.libdir} and link it",
+            "Generated by tools/rwzfs_vendor.py. Copies the library and adds its subdirectory and\n"
+            "target_link_libraries() lines to the top-level CMakeLists.txt.\n",
+        )
+
+    # 2. header additions
+    header_commit(root, args.libdir, excludes)
+
+    # 3-4. replacements, one per commit; sites that need a person are shown for a manual edit
+    skipped: set[tuple] = set()
+    quit_now = False
+    while not quit_now:
+        pending, _ = scan_project(root, args.libdir, excludes, "replace")
+        pending = [s for s in pending if site_key(s) not in skipped]
+        if not pending:
+            break
+        s = pending[0]
+        show(root, s)
+        if s.kind == "rewrite":
+            choice = pick_key("apply this replacement? [y]es / [n]o (skip) / [q]uit")
+            if choice == "q":
+                quit_now = True
+            elif choice == "y":
+                before = (
+                    (root / s.path)
+                    .read_text(encoding="utf-8", errors="surrogateescape")
+                    .split("\n")[s.line - 1]
+                )
+                apply_site(root, s)
+                after = (
+                    (root / s.path)
+                    .read_text(encoding="utf-8", errors="surrogateescape")
+                    .split("\n")[s.line - 1]
+                )
+                commit(root, [s.path], site_subject(s), site_body(s, before, after))
+                # the commit changes the line numbers: the next iteration rescans
+            else:
+                skipped.add(site_key(s))
+        else:
+            print("  needs a person: edit it in your editor and save the file.")
+            choice = pick_key(
+                "[enter] edited, commit the file's changes / [s] skip this site / [q] quit",
+                allow_enter=True,
+            )
+            if choice == "q":
+                quit_now = True
+            else:
+                # Whatever happens, this site is not offered again in this run. After an edit, the
+                # file's changes are committed as one commit.
+                skipped.add(site_key(s))
+                if (
+                    choice == ""
+                    and git(root, "diff", "--quiet", "--", s.path).returncode != 0
+                ):
+                    commit(
+                        root,
+                        [s.path],
+                        f"vendor(rwzfs): manual change at {s.path}:{s.line}",
+                        site_body(s, s.old, "(edited by hand)"),
+                    )
+                elif choice == "":
+                    print("  no change in that file; the site is skipped")
+
+    if quit_now:
+        print("stopped. Rerun to continue with the remaining sites.")
+        return 0
+
+    # 5. unused C headers
+    while True:
+        drops, _ = scan_project(root, args.libdir, excludes, "drop")
+        drops = [s for s in drops if site_key(s) not in skipped]
+        if not drops:
+            break
+        s = drops[0]
+        show(root, s)
+        choice = pick_key("remove this include? [y]es / [n]o (skip) / [q]uit")
+        if choice == "q":
+            break
+        if choice == "y":
+            apply_site(root, s)
+            commit(root, [s.path], site_subject(s), site_body(s, s.old, ""))
+        else:
+            skipped.add(site_key(s))
+
+    print("done.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

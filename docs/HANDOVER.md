@@ -124,6 +124,11 @@ Archive creation needs no `mkdwarfs` binary; dwarfs is built as libraries (`scri
 - Library headers are `.h` (for example `include/rwzfs/archive/create.h`). Test-support headers keep `.hpp`.
 - The throwing forms of the nine `rwz::fs` functions (see USAGE) are covered by `tests/fs/throwing_test.cpp`.
 
+## Review: allocations, constexpr, branches (last pass)
+- Changed: C++ stream buffers hold their 64 KiB read chunk in a `std::array` inside the buffer object (one allocation per stream, not two); the chunk size is a named `constexpr`. Overlay path helpers and `has_meta` take `std::string_view`.
+- Checked, no change: if/else pairs that assign one variable already use initialized `const` or ternaries (none found). The copy-on-write copy buffer and the flatten buffer are `std::vector` because their size is runtime data (up to 1 MiB) and must not sit on the stack. Directory listings and archive children are `std::vector`s: their length is only known after the walk.
+- Left alone: `const std::string&` parameters that pass to `c_str()`, `open()` or `fopen()`, since `string_view` has no `c_str()` and the call would copy anyway.
+
 ## Coding standard
 - Every variable, struct, array and class member is initialized when declared: `T a = {};`, `int a = 0;`, `bool b{};`. No uninitialized declarations.
 - Exception: dwarfs-typed members in `dwarfs_backend.h` are initialized in the constructor's initializer list (their types are not default-constructed here).

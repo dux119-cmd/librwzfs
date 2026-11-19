@@ -22,9 +22,9 @@ namespace cow   = rwz::overlay::cow;
 
 namespace {
 
-bool has_meta(const std::string& s)
+bool has_meta(std::string_view s)
 {
-	return s.find_first_of("*?[") != std::string::npos;
+	return s.find_first_of("*?[") != std::string_view::npos;
 }
 
 std::vector<std::string> split(const std::string& text)

@@ -31,7 +31,7 @@ bool has_overlay(const layer& l)
 
 // <overlay>/<area>/<rel>. Empty when there is no overlay, so nothing is ever
 // read from the cwd.
-stdfs::path area_path(const layer& l, std::string_view area, const std::string& rel)
+stdfs::path area_path(const layer& l, std::string_view area, std::string_view rel)
 {
 	if (!has_overlay(l)) {
 		return {};
@@ -43,15 +43,15 @@ stdfs::path area_path(const layer& l, std::string_view area, const std::string& 
 	return p;
 }
 
-stdfs::path data_of(const layer& l, const std::string& rel)
+stdfs::path data_of(const layer& l, std::string_view rel)
 {
 	return area_path(l, "data", rel);
 }
-stdfs::path whiteout_of(const layer& l, const std::string& rel)
+stdfs::path whiteout_of(const layer& l, std::string_view rel)
 {
 	return area_path(l, "whiteouts", rel);
 }
-stdfs::path opaque_of(const layer& l, const std::string& rel)
+stdfs::path opaque_of(const layer& l, std::string_view rel)
 {
 	return area_path(l, "opaque", rel);
 }
@@ -64,19 +64,20 @@ bool marker(const stdfs::path& p)
 	return stdfs::is_regular_file(p, ec);
 }
 
-std::string parent_of(const std::string& rel)
+std::string parent_of(std::string_view rel)
 {
 	const auto pos = rel.rfind('/');
-	return pos == std::string::npos ? std::string{} : rel.substr(0, pos);
+	return pos == std::string_view::npos ? std::string{}
+	                                     : std::string(rel.substr(0, pos));
 }
 
 // Strict ancestors of rel, outermost first: "a/b/c" -> {"a", "a/b"}.
-std::vector<std::string> ancestors(const std::string& rel)
+std::vector<std::string> ancestors(std::string_view rel)
 {
 	std::vector<std::string> out;
 	for (std::size_t pos = rel.find('/'); pos != std::string::npos;
 	     pos             = rel.find('/', pos + 1)) {
-		out.push_back(rel.substr(0, pos));
+		out.emplace_back(rel.substr(0, pos));
 	}
 	return out;
 }

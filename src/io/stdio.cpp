@@ -3,6 +3,7 @@
 #include <sys/types.h>
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cstdio>
 #include <filesystem>
@@ -29,6 +30,9 @@ namespace cow = rwz::overlay::cow;
 using rwz::fs::mounts::route;
 
 namespace {
+
+constexpr std::size_t kStreamBufferBytes = 64 * 1024; // read chunk for C++
+                                                      // input streams
 
 // Resolves a caller path (CWD-05). On failure sets errno (for example ELOOP)
 // and returns nullopt.
@@ -687,7 +691,10 @@ protected:
 
 private:
 	std::FILE* f_;
-	std::vector<char> storage_ = std::vector<char>(64 * 1024, 0);
+	std::array<char, kStreamBufferBytes> storage_ = {}; // inside the buffer
+	                                                    // object: one
+	                                                    // allocation per
+	                                                    // stream
 };
 
 class file_ostream::buf final : public std::streambuf {

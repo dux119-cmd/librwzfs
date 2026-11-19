@@ -1,4 +1,4 @@
-#include "rwzfs/overlay/lock.hpp"
+#include "rwzfs/overlay/lock.h"
 
 #if defined(_WIN32)
 #include <windows.h>

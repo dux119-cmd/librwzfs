@@ -1,4 +1,4 @@
-#include "rwzfs/overlay/flatten.hpp"
+#include "rwzfs/overlay/flatten.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -7,7 +7,7 @@
 #include <system_error>
 #include <vector>
 
-#include "rwzfs/overlay/host_meta.hpp"
+#include "rwzfs/overlay/host_meta.h"
 
 namespace rwz::overlay {
 

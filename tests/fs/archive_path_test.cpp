@@ -4,7 +4,7 @@
 #include <string_view>
 
 #include "../support/platform_paths.hpp"
-#include "rwzfs/fs/archive_path.hpp"
+#include "rwzfs/fs/archive_path.h"
 #include <optional>
 
 namespace fs  = std::filesystem;

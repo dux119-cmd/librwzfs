@@ -19,9 +19,9 @@
 #include <unistd.h>
 
 #include "../support/fake_backend.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/io/posix.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/io/posix.h"
 
 namespace posix  = rwz::posix;
 namespace mounts = rwz::fs::mounts;

@@ -37,10 +37,10 @@
 #include <string>
 #include <vector>
 
-#include "rwzfs/archive/create.hpp"
-#include "rwzfs/fs/archive_path.hpp"
-#include "rwzfs/io/posix.hpp"
-#include "rwzfs/mount.hpp"
+#include "rwzfs/archive/create.h"
+#include "rwzfs/fs/archive_path.h"
+#include "rwzfs/io/posix.h"
+#include "rwzfs/mount.h"
 
 namespace fs    = std::filesystem;
 namespace posix = rwz::posix;
@@ -68,7 +68,7 @@ const std::vector<std::uint64_t> kDefaultSizes =
 struct options {
 	double budget_sec = 2.0; // time budget per (file, operation); stops
 	                         // early for large files
-	int max_iters     = 500;
+	int max_iters                    = 500;
 	std::vector<std::uint64_t> sizes = kDefaultSizes;
 	std::string csv;
 	std::string compression = "zstd:level=12";
@@ -249,7 +249,7 @@ struct op_result {
 	stats throughput; // MB/s for read operations (empty for open)
 	double total_mb_per_sec = 0; // total bytes / total time for read
 	                             // operations
-	std::size_t iterations  = 0;
+	std::size_t iterations = 0;
 };
 
 // Runs one operation repeatedly until max_iters, or the budget is spent after

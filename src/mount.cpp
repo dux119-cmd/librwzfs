@@ -1,14 +1,14 @@
-#include "rwzfs/mount.hpp"
+#include "rwzfs/mount.h"
 
 #include <exception>
 #include <filesystem>
 #include <memory>
 
-#include "rwzfs/archive/dwarfs_backend.hpp"
-#include "rwzfs/fs/archive_path.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/overlay.hpp"
-#include "rwzfs/overlay/lock.hpp"
+#include "rwzfs/archive/dwarfs_backend.h"
+#include "rwzfs/fs/archive_path.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/overlay.h"
+#include "rwzfs/overlay/lock.h"
 
 namespace rwz {
 

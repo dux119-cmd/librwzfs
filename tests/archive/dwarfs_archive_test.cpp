@@ -12,12 +12,12 @@
 
 #include "../fs/test_support.hpp"
 #include "fixture.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/filesystem.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
-#include "rwzfs/io/posix.hpp"
-#include "rwzfs/mount.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/filesystem.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
+#include "rwzfs/io/posix.h"
+#include "rwzfs/mount.h"
 
 namespace fs     = std::filesystem;
 namespace mounts = rwz::fs::mounts;

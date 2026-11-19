@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <string>
 
-#include "rwzfs/fs/path.hpp"
+#include "rwzfs/fs/path.h"
 
 namespace fs  = std::filesystem;
 namespace rfs = rwz::fs;

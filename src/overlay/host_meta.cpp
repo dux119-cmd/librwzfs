@@ -1,4 +1,4 @@
-#include "rwzfs/overlay/host_meta.hpp"
+#include "rwzfs/overlay/host_meta.h"
 
 #if !defined(_WIN32)
 
@@ -66,7 +66,7 @@ std::error_code set_mtime(const std::filesystem::path& p, std::int64_t seconds)
 #else // Windows: permissions and timestamps through std::filesystem. Not yet
       // verified.
 
-#include "rwzfs/fs/time.hpp"
+#include "rwzfs/fs/time.h"
 
 namespace rwz::overlay::host_meta {
 

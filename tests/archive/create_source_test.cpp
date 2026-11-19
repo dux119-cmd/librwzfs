@@ -3,7 +3,7 @@
 #include <filesystem>
 
 #include "../fs/test_support.hpp"
-#include "rwzfs/archive/create.hpp"
+#include "rwzfs/archive/create.h"
 
 namespace fs = std::filesystem;
 

@@ -1,4 +1,4 @@
-#include "rwzfs/io/archive_glob.hpp"
+#include "rwzfs/io/archive_glob.h"
 
 #if !defined(_WIN32)
 
@@ -11,9 +11,9 @@
 #include <string>
 #include <vector>
 
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
+#include "rwzfs/overlay/cow.h"
 
 namespace rwz::detail::archive_glob {
 

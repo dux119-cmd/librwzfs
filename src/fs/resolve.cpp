@@ -1,4 +1,4 @@
-#include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/fs/resolve.h"
 
 #include <cstddef>
 #include <deque>
@@ -6,12 +6,12 @@
 #include <string>
 #include <vector>
 
-#include "rwzfs/archive/backend.hpp"
-#include "rwzfs/fs/archive_path.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/walk.hpp"
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/archive/backend.h"
+#include "rwzfs/fs/archive_path.h"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/walk.h"
+#include "rwzfs/overlay/cow.h"
 
 namespace rwz::fs {
 

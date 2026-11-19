@@ -14,12 +14,12 @@
 
 #include "../fs/test_support.hpp"
 #include "../support/platform_paths.hpp"
-#include "rwzfs/archive/create.hpp"
-#include "rwzfs/archive/create_view.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/io/posix.hpp"
-#include "rwzfs/mount.hpp"
+#include "rwzfs/archive/create.h"
+#include "rwzfs/archive/create_view.h"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/io/posix.h"
+#include "rwzfs/mount.h"
 
 namespace fs     = std::filesystem;
 namespace mounts = rwz::fs::mounts;

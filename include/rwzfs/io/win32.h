@@ -39,12 +39,11 @@ namespace rwz::win32 {
 // CloseHandle for handles returned by create_file.
 [[nodiscard]] bool close_handle(void* handle);
 
-// Host paths call the Win32 API. Archive paths: read-only opens of archive
-// files return a handle from the archive table, writes copy the file up into
-// the overlay, directories and FindFirstFileW lists the merged view of an
-// archive directory (archive plus overlay), with "." and "..". Directory
-// handles from create_file are ERROR_NOT_SUPPORTED. Failure values follow each
-// Win32 function.
+// Host paths call the Win32 API. Archive paths: read-only opens of archive files
+// return a handle from the archive table, writes copy the file up into the
+// overlay, directories and FindFirstFileW lists the merged view of an archive
+// directory (archive plus overlay), with "." and "..". Directory handles from
+// create_file are ERROR_NOT_SUPPORTED. Failure values follow each Win32 function.
 
 } // namespace rwz::win32
 

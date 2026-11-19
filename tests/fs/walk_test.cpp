@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <fstream>
 
-#include "rwzfs/fs/walk.hpp"
+#include "rwzfs/fs/walk.h"
 #include "test_support.hpp"
 
 namespace fs  = std::filesystem;

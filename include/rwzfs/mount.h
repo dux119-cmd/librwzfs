@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <string>
 
-#include "rwzfs/overlay.hpp"
+#include "rwzfs/overlay.h"
 
 namespace rwz {
 

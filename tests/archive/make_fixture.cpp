@@ -8,20 +8,18 @@
 //   DIR/SUB/inner.txt       "x"
 //   DIR/UP        -> ../DIR/FILE.DAT    relative link inside a directory
 //   DIR/UPROOT    -> ../../hostfile     relative link that climbs out of the
-//   archive LINK_REL      -> DIR/FILE.DAT       relative link at the root
-//   LINK_ABS
+//   archive LINK_REL      -> DIR/FILE.DAT       relative link at the root LINK_ABS
 //   -> /rwz/DIR/FILE.DAT  absolute archive link HOSTLINK      ->
 //   /etc/rwz-test-host absolute host link (target need not exist) DIRLINK ->
 //   DIR                directory link NESTLINK      -> DIR/SUB directory link
-//   to a nested directory DANGLING      -> NOPE               dangling link
-//   LOOP_A
+//   to a nested directory DANGLING      -> NOPE               dangling link LOOP_A
 //   -> LOOP_B, LOOP_B -> LOOP_A  loop
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <system_error>
 
-#include "rwzfs/archive/create.hpp"
+#include "rwzfs/archive/create.h"
 
 namespace fs = std::filesystem;
 

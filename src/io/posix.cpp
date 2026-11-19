@@ -1,4 +1,4 @@
-#include "rwzfs/io/posix.hpp"
+#include "rwzfs/io/posix.h"
 
 #if !defined(_WIN32)
 
@@ -19,12 +19,12 @@
 #include <string>
 #include <system_error>
 
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
-#include "rwzfs/io/archive_glob.hpp"
-#include "rwzfs/io/archive_io.hpp"
-#include "rwzfs/io/overlay_posix.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
+#include "rwzfs/io/archive_glob.h"
+#include "rwzfs/io/archive_io.h"
+#include "rwzfs/io/overlay_posix.h"
 
 namespace rwz::posix {
 

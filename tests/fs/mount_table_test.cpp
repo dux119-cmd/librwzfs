@@ -3,9 +3,9 @@
 
 #include <filesystem>
 
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
 
 namespace fs     = std::filesystem;
 namespace mounts = rwz::fs::mounts;

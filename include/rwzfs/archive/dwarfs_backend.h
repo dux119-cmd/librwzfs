@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <optional>
 
-#include "rwzfs/archive/backend.hpp"
+#include "rwzfs/archive/backend.h"
 
 namespace rwz::archive {
 

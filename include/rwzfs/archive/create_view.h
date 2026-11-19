@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <ostream>
 
-#include "rwzfs/archive/create.hpp"
+#include "rwzfs/archive/create.h"
 
 namespace rwz {
 

@@ -1,11 +1,11 @@
-#include "rwzfs/fs/walk.hpp"
+#include "rwzfs/fs/walk.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <string>
 #include <vector>
 
-#include "rwzfs/fs/archive_path.hpp"
+#include "rwzfs/fs/archive_path.h"
 
 namespace rwz::fs {
 

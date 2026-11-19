@@ -19,7 +19,7 @@ mounting returns `MountError::OpenFailed`.
 
 ## Namespaces
 
-`#include "rwzfs/rwz.hpp"` brings in the library. The I/O wrappers and filesystem functions live in
+`#include "rwzfs/rwz.h"` brings in the library. The I/O wrappers and filesystem functions live in
 flat namespaces: `rwz::posix::open(...)` (POSIX), `rwz::stdio::fopen(...)`, `rwz::fs::exists(...)`, and
 on Windows `rwz::win32::create_file(...)`. The archive, overlay, mount and creator types stay in
 `rwz::` (`rwz::create_archive`, `rwz::mount_archive`, `rwz::revise_archive`). The internal
@@ -28,7 +28,7 @@ namespaces (`rwz::detail::archive_io`, and so on) are not public API.
 ## 1. Create an archive
 
 ```cpp
-#include "rwzfs/archive/create.hpp"
+#include "rwzfs/archive/create.h"
 
 rwz::create_options create;
 create.compression = "zstd:level=12";   // default: "zstd:level=12:wlog=27:strat=3"
@@ -44,8 +44,8 @@ if (!ok) { /* create_error: source_missing, tool_not_found, tool_failed, io, ...
 ## 2. Mount with an overlay
 
 ```cpp
-#include "rwzfs/fs/archive_path.hpp"
-#include "rwzfs/mount.hpp"
+#include "rwzfs/fs/archive_path.h"
+#include "rwzfs/mount.h"
 
 rwz::mount_options options;
 options.write_root = "/var/tmp/myapp";   // optional; a relative path is resolved against the current directory
@@ -72,9 +72,9 @@ Call the rwzfs wrappers in place of the standard calls. With no archive mounted 
 the standard calls. Archive paths are answered from the merged view (archive plus overlay).
 
 ```cpp
-#include "rwzfs/io/posix.hpp"
-#include "rwzfs/io/stdio.hpp"
-#include "rwzfs/fs/filesystem.hpp"
+#include "rwzfs/io/posix.h"
+#include "rwzfs/io/stdio.h"
+#include "rwzfs/fs/filesystem.h"
 
 int fd = rwz::posix::open("/rwz/DIR/new.txt", O_WRONLY | O_CREAT, 0644);
 rwz::posix::write(fd, "data", 4);
@@ -114,7 +114,7 @@ A revision flattens the merged view (overlay wins, whiteouts and renames applied
 archive, then clears the overlay.
 
 ```cpp
-#include "rwzfs/revise.hpp"
+#include "rwzfs/revise.h"
 
 auto revised = rwz::revise_archive(root, create);
 if (revised) {
@@ -179,3 +179,13 @@ It runs as a CTest test (`rwzfs_example`) and as its own CI step on Linux, macOS
 - Symlinks cannot be created or renamed in the overlay.
 - Creation and revision are in-process on Linux, macOS and Windows. Windows creation and revision are tested by the Windows round-trip test (`tests/archive/create_view_windows_test.cpp`).
 - Revision reads each file once from the merged view into the new archive.
+
+### Throwing forms of rwz::fs
+
+`rwz::fs::exists`, `create_directories`, `is_regular_file`, `is_symlink`, `equivalent`, `absolute`,
+`current_path`, `resize_file` and the `directory_iterator` constructor have the same signatures as their
+`std::filesystem` counterparts when called without an `std::error_code`. A path outside every mounted
+archive goes straight to `std::filesystem`, so its exceptions come out unchanged. A path inside a mounted
+archive view throws `std::filesystem::filesystem_error` with the same operation name and path, so code
+that already handles `std::filesystem` needs no change. (The directory iterator's constructor always takes
+this second route, since its storage is shared with the archive listing.)

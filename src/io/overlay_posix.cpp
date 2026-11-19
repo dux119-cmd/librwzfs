@@ -1,4 +1,4 @@
-#include "rwzfs/io/overlay_posix.hpp"
+#include "rwzfs/io/overlay_posix.h"
 
 #if !defined(_WIN32)
 
@@ -14,8 +14,8 @@
 #include <string>
 #include <system_error>
 
-#include "rwzfs/io/archive_io.hpp"
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/io/archive_io.h"
+#include "rwzfs/overlay/cow.h"
 
 namespace rwz::detail::overlay_posix {
 

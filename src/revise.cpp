@@ -1,13 +1,13 @@
-#include "rwzfs/revise.hpp"
+#include "rwzfs/revise.h"
 
 #include <cctype>
 #include <ctime>
 #include <system_error>
 
-#include "rwzfs/archive/create_view.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/mount.hpp"
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/archive/create_view.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/mount.h"
+#include "rwzfs/overlay/cow.h"
 
 namespace rwz {
 

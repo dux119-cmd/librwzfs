@@ -9,7 +9,7 @@
 
 #include "../fs/test_support.hpp"
 #include "../support/fake_backend.hpp"
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/overlay/cow.h"
 
 namespace fs  = std::filesystem;
 namespace cow = rwz::overlay::cow;

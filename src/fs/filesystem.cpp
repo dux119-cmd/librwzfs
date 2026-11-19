@@ -1,4 +1,4 @@
-#include "rwzfs/fs/filesystem.hpp"
+#include "rwzfs/fs/filesystem.h"
 
 #include <chrono>
 #include <cstdint>
@@ -8,12 +8,12 @@
 #include <system_error>
 #include <vector>
 
-#include "rwzfs/archive/backend.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
-#include "rwzfs/fs/time.hpp"
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/archive/backend.h"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
+#include "rwzfs/fs/time.h"
+#include "rwzfs/overlay/cow.h"
 
 namespace rwz::fs {
 
@@ -640,6 +640,134 @@ void rename(const path& from, const path& to, std::error_code& ec)
 		return;
 	}
 	stdfs::rename(src, dst, ec);
+}
+
+} // namespace rwz::fs
+
+// ---- throwing forms ---------------------------------------------------------
+//
+// Without an error_code, a path outside every mounted archive goes straight to
+// std::filesystem, which throws its own exception. A path inside an archive
+// view runs the error_code form and throws the same exception type, with the
+// same operation name and path, so callers handle both the same way.
+
+namespace rwz::fs {
+
+namespace {
+
+bool in_archive_view(const path& p)
+{
+	return mounts::find(resolve_lexical(p)).has_value();
+}
+
+[[noreturn]] void throw_fs(const char* operation, const path& p, std::error_code ec)
+{
+	throw stdfs::filesystem_error(operation, p, ec);
+}
+
+} // namespace
+
+bool exists(const path& p)
+{
+	if (!in_archive_view(p)) {
+		return stdfs::exists(p);
+	}
+	std::error_code ec = {};
+	const bool result  = rwz::fs::exists(p, ec);
+	if (ec) {
+		throw_fs("exists", p, ec);
+	}
+	return result;
+}
+
+bool create_directories(const path& p)
+{
+	if (!in_archive_view(p)) {
+		return stdfs::create_directories(p);
+	}
+	std::error_code ec = {};
+	const bool result  = rwz::fs::create_directories(p, ec);
+	if (ec) {
+		throw_fs("create_directories", p, ec);
+	}
+	return result;
+}
+
+bool is_regular_file(const path& p)
+{
+	if (!in_archive_view(p)) {
+		return stdfs::is_regular_file(p);
+	}
+	std::error_code ec = {};
+	const bool result  = rwz::fs::is_regular_file(p, ec);
+	if (ec) {
+		throw_fs("is_regular_file", p, ec);
+	}
+	return result;
+}
+
+bool is_symlink(const path& p)
+{
+	if (!in_archive_view(p)) {
+		return stdfs::is_symlink(p);
+	}
+	std::error_code ec = {};
+	const bool result  = rwz::fs::is_symlink(p, ec);
+	if (ec) {
+		throw_fs("is_symlink", p, ec);
+	}
+	return result;
+}
+
+bool equivalent(const path& a, const path& b)
+{
+	if (!in_archive_view(a) && !in_archive_view(b)) {
+		return stdfs::equivalent(a, b);
+	}
+	std::error_code ec = {};
+	const bool result  = rwz::fs::equivalent(a, b, ec);
+	if (ec) {
+		throw_fs("equivalent", a, ec);
+	}
+	return result;
+}
+
+path absolute(const path& p)
+{
+	if (!in_archive_view(p)) {
+		return stdfs::absolute(p);
+	}
+	std::error_code ec = {};
+	path result        = rwz::fs::absolute(p, ec);
+	if (ec) {
+		throw_fs("absolute", p, ec);
+	}
+	return result;
+}
+
+path current_path()
+{
+	if (!cwd::archive_cwd()) {
+		return stdfs::current_path();
+	}
+	std::error_code ec = {};
+	path result        = rwz::fs::current_path(ec);
+	if (ec) {
+		throw_fs("current_path", path{}, ec);
+	}
+	return result;
+}
+
+void resize_file(const path& p, std::uintmax_t size)
+{
+	if (!in_archive_view(p)) {
+		return stdfs::resize_file(p, size);
+	}
+	std::error_code ec = {};
+	rwz::fs::resize_file(p, size, ec);
+	if (ec) {
+		throw_fs("resize_file", p, ec);
+	}
 }
 
 } // namespace rwz::fs

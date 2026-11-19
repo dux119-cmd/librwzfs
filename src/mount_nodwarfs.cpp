@@ -4,8 +4,8 @@
 #include <filesystem>
 #include <string>
 
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/mount.hpp"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/mount.h"
 
 namespace rwz {
 

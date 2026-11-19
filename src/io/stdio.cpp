@@ -1,4 +1,4 @@
-#include "rwzfs/io/stdio.hpp"
+#include "rwzfs/io/stdio.h"
 
 #include <sys/types.h>
 
@@ -16,11 +16,11 @@
 #include <system_error>
 #include <vector>
 
-#include "rwzfs/archive/backend.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/archive/backend.h"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
+#include "rwzfs/overlay/cow.h"
 
 namespace rwz::stdio {
 

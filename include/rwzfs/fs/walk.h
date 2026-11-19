@@ -12,7 +12,7 @@ namespace rwz::fs {
 // applied lexically. A ".." that leaves the archive, or any ".." on a host
 // path, ends the lexical part: the rest of the path is returned raw so the OS
 // follows host symlinks. Relative paths are returned unchanged. Archive
-// symlinks are not followed here (see resolve.hpp).
+// symlinks are not followed here (see resolve.h).
 [[nodiscard]] std::filesystem::path walk_lexically(const std::filesystem::path& p);
 
 namespace detail {

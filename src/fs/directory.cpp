@@ -1,15 +1,15 @@
-#include "rwzfs/fs/directory.hpp"
+#include "rwzfs/fs/directory.h"
 
 #include <cstdint>
 #include <string>
 #include <system_error>
 #include <utility>
 
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/filesystem.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/filesystem.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
+#include "rwzfs/overlay/cow.h"
 
 namespace rwz::fs {
 
@@ -418,6 +418,20 @@ bool operator==(const recursive_directory_iterator& a,
 	}
 	return a.stack_.size() == b.stack_.size() &&
 	       a.entry_.path() == b.entry_.path();
+}
+
+} // namespace rwz::fs
+
+namespace rwz::fs {
+
+directory_iterator::directory_iterator(const stdfs::path& in)
+{
+	std::error_code ec = {};
+	directory_iterator listed(in, ec);
+	if (ec) {
+		throw stdfs::filesystem_error("directory_iterator", in, ec);
+	}
+	*this = std::move(listed);
 }
 
 } // namespace rwz::fs

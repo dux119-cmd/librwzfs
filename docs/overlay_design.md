@@ -1,6 +1,6 @@
 # Overlay (copy-on-write) storage
 
-## Public API (`include/rwzfs/mount.hpp`, `include/rwzfs/overlay.hpp`)
+## Public API (`include/rwzfs/mount.h`, `include/rwzfs/overlay.h`)
 ```cpp
 rwz::mount_options opts;
 opts.write_root = "/path/to/writable/top";   // optional; a relative path is resolved against the current directory, at mount time
@@ -33,7 +33,7 @@ rwz::mount_archive("/data/archive.zip", "/rwz", opts);
 Each mount records its overlay directory. `route::overlay` exposes it to the wrappers.
 
 ## Copy-on-write engine (implemented)
-Code: `include/rwzfs/overlay/cow.hpp`, `src/overlay/cow.cpp`. POSIX and stdio dispatch: `src/io/overlay_posix.cpp`, `src/io/stdio.cpp`.
+Code: `include/rwzfs/overlay/cow.h`, `src/overlay/cow.cpp`. POSIX and stdio dispatch: `src/io/overlay_posix.cpp`, `src/io/stdio.cpp`.
 
 Overlay layout:
 - `data/<rel>`: files and directories created or copied up from the archive.

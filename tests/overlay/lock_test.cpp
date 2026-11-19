@@ -5,8 +5,8 @@
 #include <fstream>
 
 #include "../fs/test_support.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/overlay/lock.hpp"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/overlay/lock.h"
 
 namespace fs     = std::filesystem;
 namespace lock   = rwz::overlay::lock;

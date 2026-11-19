@@ -1,4 +1,4 @@
-#include "rwzfs/overlay.hpp"
+#include "rwzfs/overlay.h"
 
 #include <cstdlib>
 #include <string>

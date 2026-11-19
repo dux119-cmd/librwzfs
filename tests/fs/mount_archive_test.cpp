@@ -5,8 +5,8 @@
 #include <fstream>
 
 #include "../archive/fixture.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/mount.hpp"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/mount.h"
 #include "test_support.hpp"
 
 namespace fs     = std::filesystem;

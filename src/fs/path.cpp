@@ -1,4 +1,4 @@
-#include "rwzfs/fs/path.hpp"
+#include "rwzfs/fs/path.h"
 
 namespace rwz::fs {
 

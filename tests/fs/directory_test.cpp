@@ -11,9 +11,9 @@
 #include <vector>
 
 #include "../support/fake_backend.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/directory.hpp"
-#include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/directory.h"
+#include "rwzfs/fs/mount_table.h"
 #include "test_support.hpp"
 
 namespace fs     = std::filesystem;

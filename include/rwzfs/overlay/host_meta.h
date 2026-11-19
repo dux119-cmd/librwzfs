@@ -5,7 +5,7 @@
 #include <optional>
 #include <system_error>
 
-#include "rwzfs/archive/backend.hpp"
+#include "rwzfs/archive/backend.h"
 
 // Host metadata for overlay files, read without following symlinks.
 namespace rwz::overlay::host_meta {

@@ -18,21 +18,21 @@
 #include <string>
 #include <vector>
 
-#include "rwzfs/archive/create.hpp"
-#include "rwzfs/fs/archive_path.hpp"
-#include "rwzfs/fs/filesystem.hpp"
-#include "rwzfs/io/stdio.hpp"
-#include "rwzfs/mount.hpp"
-#include "rwzfs/revise.hpp"
+#include "rwzfs/archive/create.h"
+#include "rwzfs/fs/archive_path.h"
+#include "rwzfs/fs/filesystem.h"
+#include "rwzfs/io/stdio.h"
+#include "rwzfs/mount.h"
+#include "rwzfs/revise.h"
 
 #if defined(_WIN32)
 #include <windows.h>
 
-#include "rwzfs/io/win32.hpp"
+#include "rwzfs/io/win32.h"
 #else
 #include <dirent.h>
 
-#include "rwzfs/io/posix.hpp"
+#include "rwzfs/io/posix.h"
 #endif
 
 namespace fs    = std::filesystem;

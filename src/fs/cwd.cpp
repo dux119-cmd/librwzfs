@@ -1,10 +1,10 @@
-#include "rwzfs/fs/cwd.hpp"
+#include "rwzfs/fs/cwd.h"
 
 #include <mutex>
 
-#include "rwzfs/archive/backend.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/archive/backend.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
 
 namespace rwz::fs {
 

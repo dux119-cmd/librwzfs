@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 
-#include "rwzfs/archive/backend.hpp"
+#include "rwzfs/archive/backend.h"
 
 namespace rwz::fs::mounts {
 

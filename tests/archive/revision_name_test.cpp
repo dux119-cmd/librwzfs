@@ -3,7 +3,7 @@
 
 #include <filesystem>
 
-#include "rwzfs/revise.hpp"
+#include "rwzfs/revise.h"
 
 namespace fs = std::filesystem;
 

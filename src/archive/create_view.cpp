@@ -1,7 +1,7 @@
-#include "rwzfs/archive/create_view.hpp"
+#include "rwzfs/archive/create_view.h"
 
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
 
 #if defined(RWZFS_HAVE_DWARFS)
 
@@ -54,16 +54,16 @@
 #include <dirent.h>
 #endif
 
-#include "rwzfs/fs/archive_path.hpp"
-#include "rwzfs/fs/filesystem.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/fs/archive_path.h"
+#include "rwzfs/fs/filesystem.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
 #if defined(_WIN32)
-#include "rwzfs/io/win32.hpp"
+#include "rwzfs/io/win32.h"
 #else
-#include "rwzfs/io/posix.hpp"
+#include "rwzfs/io/posix.h"
 #endif
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/overlay/cow.h"
 
 namespace rwz {
 

@@ -1,5 +1,5 @@
-#include "rwzfs/overlay/cow.hpp"
-#include "rwzfs/overlay/host_meta.hpp"
+#include "rwzfs/overlay/cow.h"
+#include "rwzfs/overlay/host_meta.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -606,9 +606,8 @@ std::error_code materialize_tree(const layer& l)
 	return {};
 }
 
-// Permissions apply to files and directories. A directory copies its whole
-// visible tree first, because the mode is stored on the overlay copy of the
-// directory.
+// Permissions apply to files and directories. A directory copies its whole visible
+// tree first, because the mode is stored on the overlay copy of the directory.
 std::error_code set_mode(const layer& l, std::uint32_t mode_bits)
 {
 	if (!has_overlay(l)) {

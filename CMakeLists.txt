@@ -255,6 +255,7 @@ if(RWZFS_BUILD_TESTS)
     tests/io/stdio_test.cpp
     tests/io/stdio_streams_test.cpp
     tests/io/rwz_namespace_test.cpp
+    tests/fs/throwing_test.cpp
     tests/io/stdio_archive_test.cpp
     tests/io/stdio_lazy_test.cpp
     tests/io/stdio_callbacks_test.cpp

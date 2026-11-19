@@ -1,9 +1,9 @@
 # Archive access design
 
 ## Layers
-1. `rwz::archive::backend` (`include/rwzfs/archive/backend.hpp`): read-only, dwarfs-free interface. `lookup`, `read`, `list` take archive-relative text.
+1. `rwz::archive::backend` (`include/rwzfs/archive/backend.h`): read-only, dwarfs-free interface. `lookup`, `read`, `list` take archive-relative text.
 2. `rwz::archive::dwarfs_backend` (`src/archive/dwarfs_backend.cpp`): the only code that includes dwarfs headers. It is compiled only in the dwarfs-linked build.
-3. Mount table (`include/rwzfs/fs/mount_table.hpp`): each mountpoint holds an optional backend. `find(path)` routes an absolute path to the longest matching mountpoint and returns the archive-relative text.
+3. Mount table (`include/rwzfs/fs/mount_table.h`): each mountpoint holds an optional backend. `find(path)` routes an absolute path to the longest matching mountpoint and returns the archive-relative text.
 4. Wrappers: FS (`exists`, `status`, `is_regular_file`, `is_directory`, `current_path(p)`), POSIX (`open`, `read`, `lseek`, `close`, `fsync`, `stat`, `access`, `realpath`, `opendir`, `readdir`, `closedir`, `chdir`), dispatch to `io::archive_io`.
 
 ## Descriptors and DIR handles
@@ -39,7 +39,7 @@
 - `read_symlink` returns `EINVAL` for non-links and `ENOTSUP` for links, since targets are not readable yet.
 
 ## Symlinks
-- `resolve()` (`include/rwzfs/fs/resolve.hpp`) walks a path one component at a time. A symlink inside the archive is followed before the next component, as the OS does. So `NESTLINK/../FILE.DAT` is correct when `NESTLINK` is a directory link.
+- `resolve()` (`include/rwzfs/fs/resolve.h`) walks a path one component at a time. A symlink inside the archive is followed before the next component, as the OS does. So `NESTLINK/../FILE.DAT` is correct when `NESTLINK` is a directory link.
 - Absolute targets restart the walk from `/`. Relative targets continue from the link's directory.
 - A target that leaves the archive (for example `/etc/x`, or `../../x` from the root) becomes a host path. The rest of the path goes to the OS unchanged.
 - At most 5 links are followed per path. A sixth fails with `ELOOP`. This is `kMaxSymlinkFollows`. Raise it only if real use needs more.

@@ -6,9 +6,9 @@
 #include <system_error>
 
 #include "../support/fake_backend.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/filesystem.hpp"
-#include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/filesystem.h"
+#include "rwzfs/fs/mount_table.h"
 
 namespace fs     = std::filesystem;
 namespace rfs    = rwz::fs;

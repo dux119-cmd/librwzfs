@@ -11,7 +11,7 @@ inline constexpr const char* kLockName = ".rwz.lock";
 enum class lock_error {
 	in_use, // the lock file exists: one instance only, delete the lock file
 	        // to continue
-	io, // the lock file could not be created or read
+	io,     // the lock file could not be created or read
 };
 
 // Creates the lock file with O_EXCL and this process's id. If the lock file

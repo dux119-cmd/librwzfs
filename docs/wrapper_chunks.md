@@ -2,7 +2,7 @@
 
 Each wrapper has an ID and call count from the call list. Status: `declared` = header only, `implemented` = definition written, `tested` = covered by a passing test.
 
-## Path (PATH) — include/rwzfs/fs/path.hpp
+## Path (PATH) — include/rwzfs/fs/path.h
 | ID | Call | Calls | Status |
 |---|---|---|---|
 | PATH-01 | fs::path::c_str | 1319 | implemented, tested |
@@ -20,13 +20,13 @@ Each wrapper has an ID and call count from the call list. Status: `declared` = h
 | PATH-13 | fs::path::relative_path | 1 | implemented, tested |
 | PATH-14 | fs::path::u8string | 1 | implemented, tested |
 
-## Archive paths (PATH) — include/rwzfs/fs/archive_path.hpp
+## Archive paths (PATH) — include/rwzfs/fs/archive_path.h
 | ID | Call | Calls | Status |
 |---|---|---|---|
 | PATH-15 | normalize_archive_path (new, see docs/archive_paths.md) | n/a | implemented, tested |
 
-## Filesystem (FS) — include/rwzfs/fs/filesystem.hpp
-Archive reads: see docs/archive_access.md. Archive paths live under the magic root `/rwz` (see docs/archive_paths.md). Routing: a path at or under a registered mountpoint (lexical check, see `include/rwzfs/fs/mount_table.hpp`) is an archive path. Until archive lookups exist, archive paths return `std::errc::not_supported`. All other paths, including relative paths, pass through to `std::filesystem`.
+## Filesystem (FS) — include/rwzfs/fs/filesystem.h
+Archive reads: see docs/archive_access.md. Archive paths live under the magic root `/rwz` (see docs/archive_paths.md). Routing: a path at or under a registered mountpoint (lexical check, see `include/rwzfs/fs/mount_table.h`) is an archive path. Until archive lookups exist, archive paths return `std::errc::not_supported`. All other paths, including relative paths, pass through to `std::filesystem`.
 
 | ID | Call | Calls | Status |
 |---|---|---|---|
@@ -55,7 +55,7 @@ Archive reads: see docs/archive_access.md. Archive paths live under the magic ro
 | FS-23 | fs::remove | 21 | implemented, tested (passthrough + routing) |
 | FS-24 | fs::rename | 1 | implemented, tested (passthrough + routing) |
 
-## C stdio (STDIO) — include/rwzfs/io/stdio.hpp
+## C stdio (STDIO) — include/rwzfs/io/stdio.h
 | ID | Call | Calls | Status |
 |---|---|---|---|
 | STDIO-01 | fread | 295 | implemented, tested |
@@ -68,7 +68,7 @@ Archive reads: see docs/archive_access.md. Archive paths live under the magic ro
 | STDIO-08 | ofstream | 2 | implemented, tested (archive: failed stream) |
 | STDIO-09 | fclose (new) | n/a | implemented, tested |
 
-## POSIX — include/rwzfs/io/posix.hpp
+## POSIX — include/rwzfs/io/posix.h
 | ID | Call | Calls | Status |
 |---|---|---|---|
 | POSIX-01 | close | 168 | implemented, tested |
@@ -92,7 +92,7 @@ Archive reads: see docs/archive_access.md. Archive paths live under the magic ro
 | POSIX-19 | getcwd | 2 | implemented, tested |
 | POSIX-20 | glob | 1 | implemented, tested |
 
-## Win32 — include/rwzfs/io/win32.hpp
+## Win32 — include/rwzfs/io/win32.h
 | ID | Call | Calls | Status |
 |---|---|---|---|
 | WIN-01 | CreateFile | 3 | declared |
@@ -101,7 +101,7 @@ Archive reads: see docs/archive_access.md. Archive paths live under the magic ro
 | WIN-04 | FindFirstFile | 2 | declared |
 | WIN-05 | CreateDirectory | 1 | declared |
 
-## Working directory (CWD) — include/rwzfs/fs/cwd.hpp, docs/cwd_design.md
+## Working directory (CWD) — include/rwzfs/fs/cwd.h, docs/cwd_design.md
 | ID | Call | Calls | Status |
 |---|---|---|---|
 | CWD-01 | fs::current_path() getter (was FS-14) | 2 | implemented, tested |

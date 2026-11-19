@@ -10,7 +10,7 @@
 #include <system_error>
 #include <vector>
 
-#include "rwzfs/archive/backend.hpp"
+#include "rwzfs/archive/backend.h"
 
 namespace rwz::fs {
 
@@ -69,6 +69,9 @@ public:
 
 	directory_iterator() = default;
 	directory_iterator(const std::filesystem::path& p, std::error_code& ec);
+	// Throws std::filesystem::filesystem_error when the directory cannot be
+	// listed.
+	explicit directory_iterator(const std::filesystem::path& p);
 
 	[[nodiscard]] reference operator*() const noexcept
 	{

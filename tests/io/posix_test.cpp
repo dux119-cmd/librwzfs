@@ -22,9 +22,9 @@
 #include <unistd.h>
 
 #include "../fs/test_support.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/io/posix.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/io/posix.h"
 
 namespace fs     = std::filesystem;
 namespace posix  = rwz::posix;

@@ -3,8 +3,8 @@
 #include <filesystem>
 #include <system_error>
 
-#include "rwzfs/fs/directory.hpp"
-#include "rwzfs/fs/path.hpp"
+#include "rwzfs/fs/directory.h"
+#include "rwzfs/fs/path.h"
 
 namespace rwz::fs {
 
@@ -12,6 +12,9 @@ namespace rwz::fs {
 
 // FS-01 (16x)
 [[nodiscard]] bool exists(const path& p, std::error_code& ec);
+// Throwing forms: the standard exception (filesystem_error) when no error_code
+// is given.
+[[nodiscard]] bool exists(const path& p);
 // FS-02 (21x)
 [[nodiscard]] std::filesystem::file_status status(const path& p, std::error_code& ec);
 // FS-03 (16x)
@@ -19,25 +22,31 @@ void copy(const path& from, const path& to,
           std::filesystem::copy_options options, std::error_code& ec);
 // FS-04 (15x)
 [[nodiscard]] bool create_directories(const path& p, std::error_code& ec);
+[[nodiscard]] bool create_directories(const path& p);
 // FS-05 (11x)
 [[nodiscard]] bool is_regular_file(const path& p, std::error_code& ec);
+[[nodiscard]] bool is_regular_file(const path& p);
 // FS-06 (10x)
 [[nodiscard]] bool is_directory(const path& p, std::error_code& ec);
 // FS-07 (10x)
 [[nodiscard]] path absolute(const path& p, std::error_code& ec);
+[[nodiscard]] path absolute(const path& p);
 // FS-08 (9x)
 [[nodiscard]] path canonical(const path& p, std::error_code& ec);
 // FS-09 (7x): directory_iterator and FS-18: recursive_directory_iterator are
-// classes in directory.hpp. FS-10 (6x)
+// classes in directory.h. FS-10 (6x)
 [[nodiscard]] bool is_empty(const path& p, std::error_code& ec);
 // FS-11 (5x)
 void permissions(const path& p, std::filesystem::perms perms, std::error_code& ec);
 // FS-12 (4x)
 [[nodiscard]] bool is_symlink(const path& p, std::error_code& ec);
+[[nodiscard]] bool is_symlink(const path& p);
 // FS-13 (4x)
 [[nodiscard]] bool equivalent(const path& a, const path& b, std::error_code& ec);
+[[nodiscard]] bool equivalent(const path& a, const path& b);
 // FS-14 (2x) / CWD-01: returns the archive cwd when one is set.
 [[nodiscard]] path current_path(std::error_code& ec);
+[[nodiscard]] path current_path();
 // CWD-02 (new): sets the working directory. Overload of
 // std::filesystem::current_path(p, ec).
 void current_path(const path& p, std::error_code& ec);
@@ -60,6 +69,7 @@ void last_write_time(const path& p, std::filesystem::file_time_type t,
 [[nodiscard]] std::uintmax_t remove_all(const path& p, std::error_code& ec);
 // FS-22 (1x)
 void resize_file(const path& p, std::uintmax_t size, std::error_code& ec);
+void resize_file(const path& p, std::uintmax_t size);
 // FS-23 (1x) `rwz::fs::remove` (21x) is also covered here.
 [[nodiscard]] bool remove(const path& p, std::error_code& ec);
 // FS-24 (1x) `rwz::fs::rename`

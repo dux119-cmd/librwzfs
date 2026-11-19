@@ -1,4 +1,4 @@
-#include "rwzfs/archive/dwarfs_backend.hpp"
+#include "rwzfs/archive/dwarfs_backend.h"
 
 #include <dwarfs/reader/filesystem_options.h>
 

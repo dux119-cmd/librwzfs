@@ -5,10 +5,10 @@
 #include <optional>
 #include <system_error>
 
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/filesystem.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/filesystem.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
 #include "test_support.hpp"
 
 namespace fs     = std::filesystem;

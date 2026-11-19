@@ -7,8 +7,8 @@
 
 #include "../fs/test_support.hpp"
 #include "../support/fake_backend.hpp"
-#include "rwzfs/overlay/cow.hpp"
-#include "rwzfs/overlay/flatten.hpp"
+#include "rwzfs/overlay/cow.h"
+#include "rwzfs/overlay/flatten.h"
 
 namespace fs  = std::filesystem;
 namespace cow = rwz::overlay::cow;

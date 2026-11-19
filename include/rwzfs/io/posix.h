@@ -64,9 +64,8 @@ int fsync(int fd);
 char* getcwd(char* buf, std::size_t size);
 
 // C's fcntl is variadic: these cover the call forms (no argument, an integer, a
-// pointer). Archive descriptors: F_GETFL reports O_RDONLY,
-// F_GETFD/F_SETFD/F_SETFL succeed as no-ops, and locks or duplication fail with
-// ENOTSUP.
+// pointer). Archive descriptors: F_GETFL reports O_RDONLY, F_GETFD/F_SETFD/F_SETFL
+// succeed as no-ops, and locks or duplication fail with ENOTSUP.
 int fcntl(int fd, int cmd);
 int fcntl(int fd, int cmd, int arg);
 int fcntl(int fd, int cmd, void* arg);

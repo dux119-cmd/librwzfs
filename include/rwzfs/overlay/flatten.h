@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <system_error>
 
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/overlay/cow.h"
 
 namespace rwz::overlay {
 

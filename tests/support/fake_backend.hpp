@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "rwzfs/archive/backend.hpp"
+#include "rwzfs/archive/backend.h"
 
 // In-memory archive for tests that must not depend on dwarfs.
 // Modes are POSIX st_mode values written as literals so this header is portable.

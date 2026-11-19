@@ -10,15 +10,14 @@
 #include <cstdint>
 #include <vector>
 
-#include "rwzfs/archive/backend.hpp"
+#include "rwzfs/archive/backend.h"
 
-#include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/mount_table.h"
 
 namespace rwz::detail::archive_io {
 
-// Archive descriptors and DIR handles are numbered from this base, so they
-// cannot collide with host descriptors in practice (host descriptors are far
-// below it).
+// Archive descriptors and DIR handles are numbered from this base, so they cannot
+// collide with host descriptors in practice (host descriptors are far below it).
 inline constexpr int kFdBase = 0x40000000;
 
 using route = rwz::fs::mounts::route;

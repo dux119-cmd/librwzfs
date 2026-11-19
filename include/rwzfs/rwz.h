@@ -4,11 +4,11 @@
 // and rwz::fs, and the archive, overlay and mount API in rwzfs. Include this to
 // get everything.
 
-#include "rwzfs/fs/filesystem.hpp"
-#include "rwzfs/io/stdio.hpp"
+#include "rwzfs/fs/filesystem.h"
+#include "rwzfs/io/stdio.h"
 
 #if defined(_WIN32)
-#include "rwzfs/io/win32.hpp"
+#include "rwzfs/io/win32.h"
 #else
-#include "rwzfs/io/posix.hpp"
+#include "rwzfs/io/posix.h"
 #endif

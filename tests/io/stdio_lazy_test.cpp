@@ -11,9 +11,9 @@
 #include "../fs/test_support.hpp"
 #include "../support/fake_backend.hpp"
 #include "../support/platform_paths.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/io/stdio.hpp"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/io/stdio.h"
 
 namespace fs     = std::filesystem;
 namespace mounts = rwz::fs::mounts;

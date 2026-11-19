@@ -17,13 +17,13 @@
 #include <sstream>
 #include <string>
 
-#include "rwzfs/archive/create.hpp"
-#include "rwzfs/archive/create_view.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/io/win32.hpp"
-#include "rwzfs/mount.hpp"
-#include "rwzfs/revise.hpp"
+#include "rwzfs/archive/create.h"
+#include "rwzfs/archive/create_view.h"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/io/win32.h"
+#include "rwzfs/mount.h"
+#include "rwzfs/revise.h"
 
 namespace fs     = std::filesystem;
 namespace w32    = rwz::win32;

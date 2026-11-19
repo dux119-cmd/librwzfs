@@ -7,7 +7,7 @@
 #include <string>
 
 #include "../fs/test_support.hpp"
-#include "rwzfs/rwz.hpp"
+#include "rwzfs/rwz.h"
 
 TEST(RwzNamespaces, StdioAndFsOnHostPaths)
 {

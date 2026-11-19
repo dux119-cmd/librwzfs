@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 
-#include "rwzfs/overlay.hpp"
+#include "rwzfs/overlay.h"
 
 namespace fs = std::filesystem;
 namespace ov = rwz::overlay;

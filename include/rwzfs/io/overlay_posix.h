@@ -10,7 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/mount_table.h"
 
 // POSIX operations on archive paths that have an overlay. Reads see the merged
 // view; writes go to the overlay. Each function returns what its POSIX

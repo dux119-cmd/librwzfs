@@ -1,13 +1,13 @@
-#include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/fs/mount_table.h"
 
 #include <algorithm>
 #include <mutex>
 #include <vector>
 
-#include "rwzfs/fs/archive_path.hpp"
-#include "rwzfs/fs/cwd.hpp"
-#include "rwzfs/fs/walk.hpp"
-#include "rwzfs/overlay/lock.hpp"
+#include "rwzfs/fs/archive_path.h"
+#include "rwzfs/fs/cwd.h"
+#include "rwzfs/fs/walk.h"
+#include "rwzfs/overlay/lock.h"
 
 namespace rwz::fs::mounts {
 

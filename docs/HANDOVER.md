@@ -108,7 +108,7 @@ Archive creation needs no `mkdwarfs` binary; dwarfs is built as libraries (`scri
 - `docs/STATIC_BUILD.md`: `scripts/deps/build-deps.sh` and `scripts/deps/build-dwarfs.sh` build dwarfs and its dependencies as static, size-optimized libraries from pinned tags. CI runs them; `-DRWZFS_BUILD_DEPS_STATIC=ON` runs them at configure time. CI runs them on Linux, macOS and Windows; the scripts are verified by those jobs.
 
 ## Layout
-- `include/rwzfs/` public headers (`fs/`, `io/`, `archive/`, `mount.hpp`)
+- `include/rwzfs/` public headers (`fs/`, `io/`, `archive/`, `mount.h`)
 - `src/` implementations (`src/archive/dwarfs_backend.cpp` is the only dwarfs-dependent backend file)
 - `tests/` GoogleTest suites (`tests/fs/`, `tests/io/`, `tests/archive/`, `tests/support/` fake backend)
 - `docs/` specs: `archive_paths.md`, `cwd_design.md`, `archive_access.md`, `wrapper_chunks.md`, this file
@@ -118,11 +118,15 @@ Archive creation needs no `mkdwarfs` binary; dwarfs is built as libraries (`scri
 - `rwz::posix`, `rwz::stdio`, `rwz::win32`, `rwz::fs`: the public wrappers and filesystem functions (POSIX-only `posix`, Windows-only `win32`).
 - `rwz::detail`: internal (archive I/O, archive glob, overlay POSIX support). Not public API.
 - `rwzfs`: archive, overlay, mount, revise, creator, and the `rwz::fs::cwd` / `rwz::fs::mounts` helpers.
-- `rwzfs/rwz.hpp`: umbrella include for the library.
+- `rwzfs/rwz.h`: umbrella include for the library.
+
+## Headers and errors
+- Library headers are `.h` (for example `include/rwzfs/archive/create.h`). Test-support headers keep `.hpp`.
+- The throwing forms of the nine `rwz::fs` functions (see USAGE) are covered by `tests/fs/throwing_test.cpp`.
 
 ## Coding standard
 - Every variable, struct, array and class member is initialized when declared: `T a = {};`, `int a = 0;`, `bool b{};`. No uninitialized declarations.
-- Exception: dwarfs-typed members in `dwarfs_backend.hpp` are initialized in the constructor's initializer list (their types are not default-constructed here).
+- Exception: dwarfs-typed members in `dwarfs_backend.h` are initialized in the constructor's initializer list (their types are not default-constructed here).
 
 ## Archive reader tuning
 - dwarfs read-ahead: 64 KiB (`inode_reader.readahead`), set in `src/archive/dwarfs_backend.cpp`. The block cache keeps dwarfs's default (512 MiB). The read-ahead value is not yet measured; use `rwzfs_bench` to revisit it.

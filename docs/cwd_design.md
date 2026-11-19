@@ -24,7 +24,7 @@ Archive paths are absolute and start with the magic root `/rwz` (`C:/RWZ` on Win
 `/rwz/..` leaves the archive and resolves to the host path `/`. The rest of the path is host-owned. `PATH-15` (`normalize_archive_path`) is a different function: it normalizes archive-relative text and rejects escapes, and it is not used for path resolution.
 
 ## Decided: host symlinks are followed
-Inside the archive, `..` is applied lexically. Once a path leaves the archive, or is a host path, `..` is passed to the OS unchanged, so host symlinks are followed. See `walk_lexically` in `include/rwzfs/fs/walk.hpp`.
+Inside the archive, `..` is applied lexically. Once a path leaves the archive, or is a host path, `..` is passed to the OS unchanged, so host symlinks are followed. See `walk_lexically` in `include/rwzfs/fs/walk.h`.
 
 
 ## Identifiers

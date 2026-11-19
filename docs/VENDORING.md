@@ -45,11 +45,11 @@ remains. Skipped sites are not offered again in one run.
 
 ## Names
 
-Replacements use the flat namespaces of `rwzfs/rwz.hpp`:
+Replacements use the flat namespaces of `rwzfs/rwz.h`:
 
 - `rwz::posix::` (POSIX), `rwz::win32::` (Windows), `rwz::stdio::` and `rwz::fs::`
 
-Each file that needs one gets a single `#include "rwzfs/rwz.hpp"`.
+Each file that needs one gets a single `#include "rwzfs/rwz.h"`.
 
 ## Local definitions
 

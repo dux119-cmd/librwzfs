@@ -9,8 +9,8 @@
 #include <system_error>
 #include <vector>
 
-#include "rwzfs/archive/backend.hpp"
-#include "rwzfs/fs/mount_table.hpp"
+#include "rwzfs/archive/backend.h"
+#include "rwzfs/fs/mount_table.h"
 
 // Copy-on-write layer over a read-only archive. Writes never touch the archive.
 //

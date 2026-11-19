@@ -1,4 +1,4 @@
-#include "rwzfs/io/win32.hpp"
+#include "rwzfs/io/win32.h"
 
 #if defined(_WIN32)
 
@@ -16,10 +16,10 @@
 #include <system_error>
 #include <vector>
 
-#include "rwzfs/archive/backend.hpp"
-#include "rwzfs/fs/mount_table.hpp"
-#include "rwzfs/fs/resolve.hpp"
-#include "rwzfs/overlay/cow.hpp"
+#include "rwzfs/archive/backend.h"
+#include "rwzfs/fs/mount_table.h"
+#include "rwzfs/fs/resolve.h"
+#include "rwzfs/overlay/cow.h"
 
 // Archive paths through Win32:
 //   - Read-only opens of archive-only files return a handle from this module's

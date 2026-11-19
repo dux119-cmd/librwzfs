@@ -53,11 +53,12 @@ Each file that needs one gets a single `#include "rwzfs/rwz.h"`.
 
 ## Local definitions
 
-Before replacing a call, the tool scans the whole project for functions with the same name. A project
-that defines or declares its own `read`, `write`, `open` and so on (for example, I/O-port emulation)
-gets those calls listed as sites that need a person, with the file and line of the definition. A call
-the tool cannot tie to a definition (a return type on an earlier line, for instance) is still
-replaced, so check the dry run for names that look local.
+Before replacing a call, the tool scans the file it is working on for functions with the same name. A
+file that defines or declares its own `read`, `write`, `open` and so on (for example, I/O-port emulation)
+gets its calls to that name listed as sites that need a person, with the line of the local definition. A
+definition in another file does not affect the call: the call still refers to the C function unless its
+own file declares the name. A call the tool cannot tie to a definition (a return type on an earlier line,
+for instance) is still replaced, so check the dry run for names that look local.
 
 ## Rules it applies
 

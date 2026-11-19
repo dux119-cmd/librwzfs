@@ -396,41 +396,39 @@ _NON_TYPE_WORDS = {"return", "if", "else", "while", "for", "switch", "case", "th
                    "sizeof", "do", "co_return", "co_await", "not", "and", "or", "using", "typename"}
 
 
-def local_definitions(root: Path, excludes: set[str], libdir: str) -> dict[str, list[str]]:
-    """Names of functions defined or declared in the project itself (not the library, not excluded
-    directories), with where. A call of such a name may be the project's own function, not the C one:
-    DOS-emulation code, for example, has its own read() and write() on I/O ports."""
+def local_definitions(rel: str, text: str) -> dict[str, list[str]]:
+    """Names of functions defined or declared in this file, with the line. A call of such a name in the
+    same file may be the file's own function, not the C one: DOS-emulation code, for example, has its
+    own read() and write() on I/O ports. Other files are not consulted."""
     names = POSIX_FUNCS | STDIO_FUNCS | set(WIN32_FUNCS)
     found: dict[str, list[str]] = {}
     call = re.compile(r"(?<![\w.>:])([A-Za-z_]\w*)\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept\s*)?[{;]")
-    for path in scan(root, excludes, libdir):
-        rel = str(path.relative_to(root))
-        lines = path.read_text(encoding="utf-8", errors="surrogateescape").split("\n")
-        for lineno, line in enumerate(lines, 1):
-            if "#include" in line or "#define" in line:
+    lines = text.split("\n")
+    for lineno, line in enumerate(lines, 1):
+        if "#include" in line or "#define" in line:
+            continue
+        prev = lines[lineno - 2].rstrip() if lineno >= 2 else ""
+        for m in call.finditer(line):
+            name = m.group(1)
+            if name not in names:
                 continue
-            prev = lines[lineno - 2].rstrip() if lineno >= 2 else ""
-            for m in call.finditer(line):
-                name = m.group(1)
-                if name not in names:
+            prefix = line[:m.start()].rstrip()
+            if not prefix:
+                # the return type may sit on the previous line
+                typed = prev and re.search(r"[\w*&>]$", prev) and not prev.endswith((";", "{", "}"))
+                if not typed or prev.split()[-1] in _NON_TYPE_WORDS:
                     continue
-                prefix = line[:m.start()].rstrip()
-                if not prefix:
-                    # the return type may sit on the previous line
-                    typed = prev and re.search(r"[\w*&>]$", prev) and not prev.endswith((";", "{", "}"))
-                    if not typed or prev.split()[-1] in _NON_TYPE_WORDS:
-                        continue
-                else:
-                    last_word = re.search(r"(\w+)$", prefix)
-                    if not (re.search(r"[\w*&>]$", prefix) and (last_word is None or last_word.group(1) not in _NON_TYPE_WORDS)):
-                        continue
-                found.setdefault(name, []).append(f"{rel}:{lineno}")
+            else:
+                last_word = re.search(r"(\w+)$", prefix)
+                if not (re.search(r"[\w*&>]$", prefix) and (last_word is None or last_word.group(1) not in _NON_TYPE_WORDS)):
+                    continue
+            found.setdefault(name, []).append(f"{rel}:{lineno}")
     return found
 
 
-def find_sites(rel: str, text: str, has: set[str], aliases: set[str],
-               local: dict[str, list[str]] | None = None) -> tuple[list[Site], int]:
+def find_sites(rel: str, text: str, has: set[str], aliases: set[str]) -> tuple[list[Site], int]:
     """Every replacement, manual site and stream type in one file. Returns (sites, silent_count)."""
+    local = local_definitions(rel, text)
     sites: list[Site] = []
     silent = 0
     names = POSIX_FUNCS | STDIO_FUNCS | set(WIN32_FUNCS)
@@ -645,7 +643,6 @@ def scan_project(root: Path, libdir: str, excludes: set[str], phase: str) -> tup
     inc_cache: dict = {}
     out: list[Site] = []
     silent_total = 0
-    local = local_definitions(root, excludes, libdir) if phase == "replace" else {}
     for path in scan(root, excludes, libdir):
         rel = str(path.relative_to(root))
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
@@ -654,7 +651,7 @@ def scan_project(root: Path, libdir: str, excludes: set[str], phase: str) -> tup
         if phase == "replace":
             has = system_includes_reachable(path, root, inc_cache)
             aliases = set(FS_ALIAS_DECL.findall(text))
-            sites, silent = find_sites(rel, text, has, aliases, local)
+            sites, silent = find_sites(rel, text, has, aliases)
             silent_total += silent
             out.extend(sites)
         else:
@@ -665,14 +662,13 @@ def scan_project(root: Path, libdir: str, excludes: set[str], phase: str) -> tup
 def header_commit(root: Path, libdir: str, excludes: set[str]) -> None:
     """One commit adding every rwzfs include the replacements will need, before any code change."""
     needed: dict[str, set[str]] = {}
-    local = local_definitions(root, excludes, libdir)
     for path in scan(root, excludes, libdir):
         rel = str(path.relative_to(root))
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
         if path.suffix == ".c" or (path.suffix == ".h" and not CXX_HINT.search(text)):
             continue
         has = system_includes_reachable(path, root, {})
-        sites, _ = find_sites(rel, text, has, set(FS_ALIAS_DECL.findall(text)), local)
+        sites, _ = find_sites(rel, text, has, set(FS_ALIAS_DECL.findall(text)))
         fams = {s.family for s in sites if s.kind == "rewrite" and s.family}
         if fams:
             needed[rel] = fams

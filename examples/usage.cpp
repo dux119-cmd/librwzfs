@@ -173,11 +173,13 @@ void stat_file(const std::string& root, const std::string& rel, transcript& t)
 		t.add("stat " + rel + ": " + kNotFound);
 		return;
 	}
-	std::ostringstream os = {};
-	os << "stat " << rel << ": mode " << std::oct
-	   << (static_cast<unsigned>(st.permissions()) & 0777) << std::dec
-	   << ", " << file_size(join(root, rel)) << " bytes";
-	t.add(os.str());
+	// Only "writable or not" is compared: Windows has no execute bits and
+	// synthesizes the others, so the raw mode differs between a host file
+	// and an archive entry while meaning the same thing.
+	const bool writable = (st.permissions() & fs::perms::owner_write) !=
+	                      fs::perms::none;
+	t.add("stat " + rel + ": " + (writable ? "writable" : "read-only") +
+	      ", " + std::to_string(file_size(join(root, rel))) + " bytes");
 }
 
 void read_file(const std::string& root, const std::string& rel, transcript& t)

@@ -129,6 +129,18 @@ Archive creation needs no `mkdwarfs` binary; dwarfs is built as libraries (`scri
 - Checked, no change: if/else pairs that assign one variable already use initialized `const` or ternaries (none found). The copy-on-write copy buffer and the flatten buffer are `std::vector` because their size is runtime data (up to 1 MiB) and must not sit on the stack. Directory listings and archive children are `std::vector`s: their length is only known after the walk.
 - Left alone: `const std::string&` parameters that pass to `c_str()`, `open()` or `fopen()`, since `string_view` has no `c_str()` and the call would copy anyway.
 
+## Sanitizer testing
+One flag builds the tests with debug info, AddressSanitizer and UndefinedBehaviorSanitizer:
+
+    cmake --preset sanitize && cmake --build --preset sanitize && ctest --preset sanitize
+
+or, without presets: `cmake -S . -B build-sanitize -DRWZFS_SANITIZE=ON`. The flag turns on the tests and
+sets the build type to Debug (unless one is given). `-fno-sanitize-recover` makes the first undefined
+behaviour fail its test. The test preset sets `ASAN_OPTIONS` and `UBSAN_OPTIONS` (leak detection on).
+GCC and Clang only. Verified here: all 348 tests pass with the sanitizers linked and no reports.
+Not covered: `RWZFS_BUILD_DEPS_STATIC` builds its dependencies without the sanitizers, and the dwarfs
+tests need `-DRWZFS_WITH_DWARFS=ON` with a dwarfs install.
+
 ## Coding standard
 - Every variable, struct, array and class member is initialized when declared: `T a = {};`, `int a = 0;`, `bool b{};`. No uninitialized declarations.
 - Exception: dwarfs-typed members in `dwarfs_backend.h` are initialized in the constructor's initializer list (their types are not default-constructed here).

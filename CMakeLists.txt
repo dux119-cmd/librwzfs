@@ -14,7 +14,11 @@ project(rwzfs LANGUAGES CXX)
 # Defaults for a top-level build. A parent project that adds rwzfs as a subdirectory keeps its own.
 if(PROJECT_IS_TOP_LEVEL)
   if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (default: Release)" FORCE)
+    if(RWZFS_SANITIZE)
+      set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type (default: Debug with RWZFS_SANITIZE)" FORCE)
+    else()
+      set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (default: Release)" FORCE)
+    endif()
   endif()
   if(MSVC AND NOT CMAKE_MSVC_RUNTIME_LIBRARY)
     # Static runtime, matching the static dependencies (scripts/deps).
@@ -27,8 +31,24 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(RWZFS_BUILD_TESTS "Build rwzfs tests" ON)
+# One flag for sanitizer testing: debug info, AddressSanitizer and UndefinedBehaviorSanitizer, tests on.
+# Use it with the sanitize preset, or: cmake -DRWZFS_SANITIZE=ON ...
+option(RWZFS_SANITIZE "Debug build with AddressSanitizer and UndefinedBehaviorSanitizer; enables the tests" OFF)
 option(RWZFS_PCH "Use precompiled headers for common standard headers" ON)
 option(RWZFS_WITH_DWARFS "Build the dwarfs-backed archive reader and its integration tests" ON)
+
+# ---- Sanitizer build (RWZFS_SANITIZE) ---------------------------------------
+# Turns on the tests and compiles everything with -g, AddressSanitizer and UndefinedBehaviorSanitizer.
+# -fno-sanitize-recover makes the first undefined behaviour abort the test that hit it.
+if(RWZFS_SANITIZE)
+  if(MSVC)
+    message(FATAL_ERROR "RWZFS_SANITIZE needs GCC or Clang: AddressSanitizer and UBSan are not wired for MSVC.")
+  endif()
+  set(RWZFS_BUILD_TESTS ON CACHE BOOL "Build rwzfs tests" FORCE)
+  add_compile_options(-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all)
+  add_link_options(-fsanitize=address,undefined)
+  message(STATUS "rwzfs: sanitizer build (AddressSanitizer + UndefinedBehaviorSanitizer), tests on")
+endif()
 
 # ---- Static, size-optimized dependencies (optional) ------------------------
 # RWZFS_BUILD_DEPS_STATIC builds dwarfs and its dependencies from source as static libraries

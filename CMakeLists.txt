@@ -50,47 +50,65 @@ if(RWZFS_SANITIZE)
   message(STATUS "rwzfs: sanitizer build (AddressSanitizer + UndefinedBehaviorSanitizer), tests on")
 endif()
 
-# ---- Static, size-optimized dependencies (optional) ------------------------
-# RWZFS_BUILD_DEPS_STATIC builds dwarfs and its dependencies from source as static libraries
-# (scripts/deps/build-deps.sh, then build-dwarfs.sh) into the build tree, and uses them. It needs
-# bash, git, curl, a C++23 compiler, and a few minutes (hours on one CPU).
-option(RWZFS_BUILD_DEPS_STATIC
-  "Build dwarfs and its dependencies as static, size-optimized libraries (scripts/deps)" OFF)
+# ---- Managed dependencies ---------------------------------------------------
+# RWZFS_USE_MANAGED_DEPS (default ON) builds dwarfs and its dependencies from pinned sources, as static,
+# size-optimized libraries, once, into RWZFS_DEPS_DIR (default: build-deps/ beside build/). Every build
+# directory (Release, Debug, sanitizer, tests) finds and uses the same libraries. Cleaning build/ keeps
+# them. OFF uses system-provided libraries, with DWARFS_PREFIX (default /usr/local).
+# Needs bash (Git's bash on Windows), git, curl, a C++23 compiler, and a few minutes (hours on one CPU).
+option(RWZFS_USE_MANAGED_DEPS
+  "Use rwzfs's own static dependencies (dwarfs and friends), built once into RWZFS_DEPS_DIR. OFF uses system libraries." ON)
+set(RWZFS_DEPS_DIR "${PROJECT_SOURCE_DIR}/build-deps" CACHE PATH
+  "Where the managed dependencies are installed. Outside build/, so cleaning build/ keeps them.")
 option(RWZFS_SIZE_OPTIMIZED "Compile rwzfs for size in Release (-Os, per-function sections)" ON)
 
-set(RWZFS_DEPS_PREFIX "${CMAKE_BINARY_DIR}/deps-install")
-set(RWZFS_DWARFS_PREFIX "${CMAKE_BINARY_DIR}/dwarfs-install")
+if(RWZFS_USE_MANAGED_DEPS AND RWZFS_WITH_DWARFS)
+  set(RWZFS_DEPS_PREFIX "${RWZFS_DEPS_DIR}")
+  set(RWZFS_DEPS_WORK "${RWZFS_DEPS_DIR}/work")
+  set(RWZFS_DEPS_STAMP "${RWZFS_DEPS_DIR}/.rwz-recipe")
 
-if(RWZFS_BUILD_DEPS_STATIC AND RWZFS_WITH_DWARFS)
-  if(NOT EXISTS "${RWZFS_DWARFS_PREFIX}/.rwz-complete")
-    find_program(RWZ_BASH bash REQUIRED)
-    file(MAKE_DIRECTORY "${RWZFS_DWARFS_PREFIX}")
-    message(STATUS "rwzfs: building static dependencies (scripts/deps/build-deps.sh)")
-    if(RWZFS_BUILD_TESTS)
-      set(RWZ_WITH_TESTS 1)
-    else()
-      set(RWZ_WITH_TESTS 0)
-    endif()
-    execute_process(
-      COMMAND ${CMAKE_COMMAND} -E env
-              "DEPS_PREFIX=${RWZFS_DEPS_PREFIX}"
-              "DEPS_WORK=${CMAKE_BINARY_DIR}/deps-work"
-              "WITH_TESTS=${RWZ_WITH_TESTS}"
-              "${RWZ_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/deps/build-deps.sh"
-      COMMAND_ERROR_IS_FATAL ANY)
-    message(STATUS "rwzfs: building static dwarfs (scripts/deps/build-dwarfs.sh)")
-    execute_process(
-      COMMAND ${CMAKE_COMMAND} -E env
-              "DEPS_PREFIX=${RWZFS_DEPS_PREFIX}"
-              "DWARFS_PREFIX=${RWZFS_DWARFS_PREFIX}"
-              "DWARFS_WORK=${CMAKE_BINARY_DIR}/dwarfs-work"
-              "${RWZ_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/deps/build-dwarfs.sh"
-      COMMAND_ERROR_IS_FATAL ANY)
-    file(TOUCH "${RWZFS_DWARFS_PREFIX}/.rwz-complete")
+  # The recipe: every file in scripts/deps (versions.sh pins every version; the rest is the actions that
+  # build them). A change to any of them rebuilds everything, so an installed library can never be older
+  # than the recipe that names it.
+  file(GLOB _rwz_recipe_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/scripts/deps/*")
+  list(SORT _rwz_recipe_files)
+  set(_rwz_recipe "")
+  foreach(_rwz_f IN LISTS _rwz_recipe_files)
+    file(SHA256 "${_rwz_f}" _rwz_h)
+    string(APPEND _rwz_recipe "${_rwz_h} ")
+  endforeach()
+  set(_rwz_installed "")
+  if(EXISTS "${RWZFS_DEPS_STAMP}")
+    file(READ "${RWZFS_DEPS_STAMP}" _rwz_installed)
   endif()
-  set(DWARFS_PREFIX "${RWZFS_DWARFS_PREFIX}" CACHE PATH "Prefix where dwarfs is installed" FORCE)
+
+  if(NOT _rwz_installed STREQUAL _rwz_recipe)
+    if(EXISTS "${RWZFS_DEPS_STAMP}")
+      message(STATUS "rwzfs: the dependency recipe changed; rebuilding the managed dependencies")
+      file(REMOVE "${RWZFS_DEPS_STAMP}" "${RWZFS_DEPS_DIR}/.stamps")
+    endif()
+    if(WIN32)
+      # Git's bash: the bash on PATH may be WSL's, which cannot run these scripts.
+      find_program(RWZ_BASH NAMES bash
+        PATHS "$ENV{ProgramFiles}/Git/bin" "$ENV{ProgramW6432}/Git/bin" NO_DEFAULT_PATH)
+    endif()
+    find_program(RWZ_BASH NAMES bash REQUIRED)
+    file(MAKE_DIRECTORY "${RWZFS_DEPS_DIR}")
+    message(STATUS "rwzfs: building the managed dependencies into ${RWZFS_DEPS_DIR} (once; shared by all builds)")
+    # build-all.sh builds every dependency in order (dwarfs last), into one prefix.
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E env
+              "DEPS_PREFIX=${RWZFS_DEPS_PREFIX}"
+              "DEPS_WORK=${RWZFS_DEPS_WORK}"
+              "WITH_TESTS=1"
+              "${RWZ_BASH}" "${PROJECT_SOURCE_DIR}/scripts/deps/build-all.sh"
+      COMMAND_ERROR_IS_FATAL ANY)
+    file(WRITE "${RWZFS_DEPS_STAMP}" "${_rwz_recipe}")
+  endif()
+
+  set(DWARFS_PREFIX "${RWZFS_DEPS_PREFIX}" CACHE PATH "Prefix where dwarfs is installed" FORCE)
   list(PREPEND CMAKE_PREFIX_PATH "${RWZFS_DEPS_PREFIX}")
-  # Only the static prefix is visible to pkg-config, and find_library/find_package prefer static
+  # Only the managed prefix is visible to pkg-config, and find_library/find_package prefer static
   # archives. Otherwise system .so files (libcrypto, libzstd, libgtest, ...) get linked.
   set(ENV{PKG_CONFIG_LIBDIR} "${RWZFS_DEPS_PREFIX}/lib/pkgconfig:${RWZFS_DEPS_PREFIX}/lib64/pkgconfig")
   if(WIN32)
@@ -98,9 +116,10 @@ if(RWZFS_BUILD_DEPS_STATIC AND RWZFS_WITH_DWARFS)
   else()
     set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
   endif()
-  message(STATUS "rwzfs: using static dependencies from ${RWZFS_DEPS_PREFIX}")
-else()
+  message(STATUS "rwzfs: using the managed dependencies in ${RWZFS_DEPS_PREFIX}")
+elseif(RWZFS_WITH_DWARFS)
   set(DWARFS_PREFIX "/usr/local" CACHE PATH "Prefix where dwarfs is installed")
+  message(STATUS "rwzfs: using system-provided dependencies (RWZFS_USE_MANAGED_DEPS=OFF)")
 endif()
 
 set(RWZFS_PCH_HEADERS
@@ -178,7 +197,7 @@ endif()
 
 add_library(rwzfs ${RWZFS_CORE_SOURCES} ${RWZFS_DWARFS_SOURCES})
 target_include_directories(rwzfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-# jemalloc (static, built by scripts/deps/build-deps.sh) gives faster, leaner allocation for the
+# jemalloc (static, built by scripts/deps/jemalloc.sh) gives faster, leaner allocation for the
 # archive creator and the merged view. Linked publicly, so the final executable gets it. An
 # unprefixed static jemalloc replaces malloc in that executable; set RWZFS_USE_JEMALLOC=OFF to keep
 # the platform allocator.
@@ -276,6 +295,8 @@ if(RWZFS_BUILD_TESTS)
     tests/io/stdio_streams_test.cpp
     tests/io/rwz_namespace_test.cpp
     tests/fs/throwing_test.cpp
+    tests/fs/proximate_test.cpp
+    tests/io/stdio_open_modes_test.cpp
     tests/io/stdio_archive_test.cpp
     tests/io/stdio_lazy_test.cpp
     tests/io/stdio_callbacks_test.cpp

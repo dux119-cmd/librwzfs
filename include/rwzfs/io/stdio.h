@@ -43,15 +43,28 @@ int remove(const char* path);
 int rename(const char* from, const char* to);
 // C++ streams over the stdio wrappers above, so archive and overlay paths work
 // as with fopen (no archive mounted: the stream is in the failed state).
+// Movable, not copyable. C++ streams over the stdio wrappers above, so archive
+// and overlay paths work as with fopen. The interface follows std::ifstream and
+// std::ofstream: the same constructors, open(), close(), and the openmode flags
+// (in, out, app, trunc, binary, ate). A default-constructed stream is closed.
 // Movable, not copyable.
+//
+// Openmode to fopen, as the standard's table: in = "r"; out = "w" (truncates,
+// also when given alone); out|app = "a"; in|out = "r+" (no truncation);
+// in|out|trunc = "w+"; in|out|app = "a+"; binary adds "b". ate seeks to the end
+// after opening. An input stream rejects trunc and app.
 class file_istream : public std::istream {
 public:
-	explicit file_istream(const std::string& path);
-	explicit file_istream(const char* path);
-	explicit file_istream(const std::filesystem::path& path);
+	file_istream();
+	explicit file_istream(const std::filesystem::path& path,
+	                      std::ios_base::openmode mode = std::ios_base::in);
 	file_istream(file_istream&& other) noexcept;
 	file_istream& operator=(file_istream&&) = delete;
 	~file_istream() override;
+
+	void open(const std::filesystem::path& path,
+	          std::ios_base::openmode mode = std::ios_base::in);
+	void close();
 	[[nodiscard]] bool is_open() const noexcept;
 
 private:
@@ -62,12 +75,16 @@ private:
 
 class file_ostream : public std::ostream {
 public:
-	explicit file_ostream(const std::string& path);
-	explicit file_ostream(const char* path);
-	explicit file_ostream(const std::filesystem::path& path);
+	file_ostream();
+	explicit file_ostream(const std::filesystem::path& path,
+	                      std::ios_base::openmode mode = std::ios_base::out);
 	file_ostream(file_ostream&& other) noexcept;
 	file_ostream& operator=(file_ostream&&) = delete;
 	~file_ostream() override;
+
+	void open(const std::filesystem::path& path,
+	          std::ios_base::openmode mode = std::ios_base::out);
+	void close();
 	[[nodiscard]] bool is_open() const noexcept;
 
 private:

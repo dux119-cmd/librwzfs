@@ -88,12 +88,13 @@ Nothing is open that is in scope. Accepted behaviour, not work items:
 
 ## Building and testing
 ```
-cmake -S . -B build -DRWZFS_BUILD_DEPS_STATIC=ON        # or: -DDWARFS_PREFIX=/usr/local
+cmake -S . -B build                                    # managed dependencies (default)
+cmake -S . -B build -DRWZFS_USE_MANAGED_DEPS=OFF -DDWARFS_PREFIX=/usr/local   # system libraries
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 Run tests through CTest, not the test binary directly, so the archive fixture is regenerated.
-Archive creation needs no `mkdwarfs` binary; dwarfs is built as libraries (`scripts/deps/build-dwarfs.sh`).
+Archive creation needs no `mkdwarfs` binary; dwarfs is built as libraries (`scripts/deps/dwarfs.sh`).
 
 ## Documentation for users
 - `docs/USAGE.md`: create, mount, use the wrappers, revise. The showcase `examples/usage.cpp` (`rwzfs_example`) runs the whole library end to end, comparing host, archive, changed and revised transcripts. It runs as a CTest test and as a CI step on Linux, macOS and Windows.
@@ -105,7 +106,7 @@ Archive creation needs no `mkdwarfs` binary; dwarfs is built as libraries (`scri
 - `docs/VENDORING.md` and `tools/rwzfs_vendor.py`: vendor the library into a CMake C++ project and switch its IO calls to the wrappers. The report lists what needs a person. Tested on a sample project.
 
 ## Static builds
-- `docs/STATIC_BUILD.md`: `scripts/deps/build-deps.sh` and `scripts/deps/build-dwarfs.sh` build dwarfs and its dependencies as static, size-optimized libraries from pinned tags. CI runs them; `-DRWZFS_BUILD_DEPS_STATIC=ON` runs them at configure time. CI runs them on Linux, macOS and Windows; the scripts are verified by those jobs.
+- `docs/STATIC_BUILD.md`: `scripts/deps/build-all.sh` (one builder per dependency, versions in `versions.sh`) builds dwarfs and its dependencies as static, size-optimized libraries from pinned tags. CMake runs it at configure time (`RWZFS_USE_MANAGED_DEPS`, on by default). CI builds them on Linux, macOS and Windows.
 
 ## Layout
 - `include/rwzfs/` public headers (`fs/`, `io/`, `archive/`, `mount.h`)
@@ -138,7 +139,7 @@ or, without presets: `cmake -S . -B build-sanitize -DRWZFS_SANITIZE=ON`. The fla
 sets the build type to Debug (unless one is given). `-fno-sanitize-recover` makes the first undefined
 behaviour fail its test. The test preset sets `ASAN_OPTIONS` and `UBSAN_OPTIONS` (leak detection on).
 GCC and Clang only. Verified here: all 348 tests pass with the sanitizers linked and no reports.
-Not covered: `RWZFS_BUILD_DEPS_STATIC` builds its dependencies without the sanitizers, and the dwarfs
+Not covered: the managed dependencies are built without the sanitizers (shared by all builds), and the dwarfs
 tests need `-DRWZFS_WITH_DWARFS=ON` with a dwarfs install.
 
 ## Coding standard

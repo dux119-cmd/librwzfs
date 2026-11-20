@@ -1,58 +1,64 @@
-# Static, size-optimized dwarfs and dependencies
+# Managed dependencies
 
-rwzfs can use dwarfs and its dependencies as static, size-optimized libraries built from pinned
-source. Two scripts do the work, and CI and users run the same ones.
+rwzfs builds dwarfs and its dependencies from pinned sources, as static, size-optimized libraries, into
+one prefix: `build-deps/`, beside `build/`. This is the default (`RWZFS_USE_MANAGED_DEPS=ON`).
 
-| script | builds |
+Because the prefix sits outside `build/`, every build directory shares it (Release, Debug, sanitizer,
+tests), and cleaning `build/` keeps it. The libraries are built once.
+
+## Layout
+
+    scripts/deps/
+      versions.sh        every pinned version (the only place a version changes)
+      common.sh          shared actions: flags, fetch, cmake install, stamps, dry run, .pc shims
+      zlib.sh zstd.sh xxhash.sh fmt.sh flac.sh openssl.sh libarchive.sh boost.sh
+      utfcpp.sh json.sh phmap.sh jemalloc.sh googletest.sh dwarfs.sh
+                         one builder per dependency: sets its optimization level, sources common.sh,
+                         and registers its build with dep_main
+      windows-shims.sh   Windows only: .pc files for libraries whose MSVC installs lack one
+      build-all.sh       runs each builder in dependency order (dwarfs last)
+      patch-dwarfs-apple.py   the one source patch dwarfs needs on Apple's libc++
+
+CMake runs `build-all.sh` when a managed build is configured and the recipe has changed. The recipe is
+a hash of every file in `scripts/deps`, so any change to a version or an action rebuilds everything.
+
+## Use
+
+    cmake -S . -B build                          # managed dependencies, built on first use
+    cmake -S . -B build -DRWZFS_USE_MANAGED_DEPS=OFF -DDWARFS_PREFIX=/usr/local   # system libraries
+
+To build the dependencies by hand, without CMake:
+
+    DEPS_PREFIX=$PWD/build-deps bash scripts/deps/build-all.sh
+
+Options (environment, for `build-all.sh` or any single step):
+
+| variable | meaning |
 |---|---|
-| `scripts/deps/build-deps.sh` | zlib, zstd, xxHash, fmt, FLAC, OpenSSL (libcrypto), libarchive, Boost, jemalloc, utfcpp, nlohmann/json, parallel-hashmap; googletest with `WITH_TESTS=1` |
-| `scripts/deps/build-dwarfs.sh` | libdwarfs (reader and writer) at `DWARFS_REF`, against the dependencies above |
+| `DEPS_PREFIX` | install prefix (default `build-deps/`) |
+| `DEPS_WORK` | scratch area (default `$DEPS_PREFIX/work`), removed on success unless `KEEP_WORK=1` |
+| `JOBS` | parallel jobs |
+| `WITH_TESTS=1` | also build googletest |
+| `JEMALLOC=0` | skip jemalloc (rwzfs then uses the platform allocator) |
+| `ONLY=zstd,fmt` | build only the listed steps |
+| `DRY_RUN=1` | print the plan and build nothing |
 
-## Use them directly
+A single step can be run alone, for example `DEPS_PREFIX=... bash scripts/deps/zstd.sh`. It finds its
+versions and the shared actions, and skips itself if its stamp exists in `$DEPS_PREFIX/.stamps`.
 
-    DEPS_PREFIX=$PWD/deps-install bash scripts/deps/build-deps.sh
-    DEPS_PREFIX=$PWD/deps-install DWARFS_PREFIX=$PWD/dwarfs-install bash scripts/deps/build-dwarfs.sh
-    cmake -S . -B build -DDWARFS_PREFIX=$PWD/dwarfs-install -DCMAKE_PREFIX_PATH=$PWD/deps-install
+## Changing a version
 
-Environment variables (see the header of each script): `DEPS_PREFIX`, `DEPS_WORK`, `DWARFS_PREFIX`,
-`DWARFS_WORK`, `DWARFS_REF`, `JOBS`, `WITH_TESTS`, `JEMALLOC` (default 1), `ONLY` (a comma list to
-build a subset), `KEEP_WORK`, `CC`, `CXX`. A dependency that is already built is skipped on a rerun; delete
-`$DEPS_PREFIX/.stamps/<name>` to rebuild it.
-
-## Or let CMake do it
-
-    cmake -S . -B build -DRWZFS_BUILD_DEPS_STATIC=ON
-
-This runs both scripts at configure time, into `build/deps-install` and `build/dwarfs-install`, and
-points rwzfs at them. It needs bash, git, curl, a C++23 compiler, cmake, and (on Apple) Xcode 16.x or
-later. Expect hours on one CPU; a cache makes later configures instant.
-
-## What is kept and what is dropped
-
-dwarfs is configured for zstd and FLAC compression only:
-
-- Off: LZ4, LZMA, Brotli, RICEPP compressors; dwarfs's own jemalloc and mimalloc hooks; the command-line
-  tools (rwzfs writes archives through the library); FUSE driver and extract binary; man pages; desktop
-  integration; perf monitor; stack traces; ccache.
-- On: zstd (always), FLAC.
-- jemalloc is built by `build-deps.sh` (static, `JEMALLOC=1` by default). rwzfs links it by default
-  (`RWZFS_USE_JEMALLOC`). An unprefixed static jemalloc replaces malloc in the executable that links
-  rwzfs. Set `-DRWZFS_USE_JEMALLOC=OFF` to keep the platform allocator.
-
-Dependencies that dwarfs requires unconditionally stay (libarchive, libcrypto, xxHash, Boost chrono,
-filesystem, program_options, process, thread).
-
-Every library is built with `-Os -ffunction-sections -fdata-sections`, `MinSizeRel`, static, and
-position-independent code, so a consumer's linker can drop unused functions (`-Wl,--gc-sections`).
-rwzfs itself is compiled with the same flags in Release (`RWZFS_SIZE_OPTIMIZED`, on by default).
+Edit `versions.sh`. The next configure sees a different recipe and rebuilds the managed dependencies
+from scratch. To force a rebuild without a version change, delete `build-deps/`.
 
 ## Notes
 
-- Versions are pinned by git tag (and the Boost CMake release tarball). git verifies tag objects on
-  clone. The tarball has no checksum yet; add one to `build-deps.sh` before relying on it for
-  release builds.
-- macOS: `patch-dwarfs-apple.py` replaces dwarfs's one use of `std::chrono::from_stream`, which Apple's
-  libc++ lacks. It is applied only on Darwin.
-- Static consumers: pkg-config files list `Libs` without `Libs.private`, so a consumer that links the
-  static libraries directly may need the transitive list (`pkg-config --static`). The build scripts do
-  not change that.
+- Speed-optimized libraries (zstd, xxHash, jemalloc) use `-Ofast`. The rest use `-Os`. dwarfs keeps its
+  own flags, as it always has.
+- Windows uses MSVC with the static C runtime. The scripts run under Git for Windows' bash; CMake
+  looks for that bash first, because a `bash` on PATH may be WSL's.
+- jemalloc is linked by rwzfs by default (`RWZFS_USE_JEMALLOC`). It replaces malloc in the final
+  executable, so it is process-wide.
+- Building takes a long time on one CPU. Keep `build-deps/` between builds.
+- The tarballs (Boost, jemalloc) are not checksummed yet. Add a checksum to their step before relying
+  on them for a release.

@@ -627,6 +627,55 @@ int rename(const char* from, const char* to)
 // in-memory copy.
 // ---- C++ streams over the stdio wrappers ----------------------------------
 
+namespace {
+
+// The fopen mode for a C++ openmode, as the standard's table gives it (see
+// stdio.h), or "" for a combination an input stream rejects.
+std::string fopen_mode(std::ios_base::openmode mode, bool input)
+{
+	const bool in    = (mode & std::ios_base::in) != 0;
+	const bool app   = (mode & std::ios_base::app) != 0;
+	const bool trunc = (mode & std::ios_base::trunc) != 0;
+	std::string m    = {};
+	if (input) {
+		if (app || trunc) {
+			return {};
+		}
+		m = "r";
+	} else if (app) {
+		m = in ? "a+" : "a";
+	} else if (in) {
+		m = trunc ? "w+" : "r+";
+	} else {
+		m = "w"; // out alone truncates, as in the standard
+	}
+	if ((mode & std::ios_base::binary) != 0) {
+		m += 'b';
+	}
+	return m;
+}
+
+// Opens the buffer for a stream. A failed open leaves the buffer closed; the
+// stream sets failbit.
+template <typename Buf>
+std::shared_ptr<Buf> open_buf(const std::filesystem::path& path,
+                              std::ios_base::openmode mode, bool input)
+{
+	const std::string m = fopen_mode(mode, input);
+	std::FILE* f        = nullptr;
+	if (m.empty()) {
+		errno = EINVAL;
+	} else {
+		f = rwz::stdio::fopen(path.string().c_str(), m.c_str());
+	}
+	if (f != nullptr && (mode & std::ios_base::ate) != 0) {
+		rwz::stdio::fseek(f, 0, SEEK_END);
+	}
+	return std::make_shared<Buf>(f);
+}
+
+} // namespace
+
 class file_istream::buf final : public std::streambuf {
 public:
 	explicit buf(std::FILE* f) : f_{f} {}
@@ -641,6 +690,12 @@ public:
 	[[nodiscard]] bool is_open() const noexcept
 	{
 		return f_ != nullptr;
+	}
+	int close()
+	{
+		std::FILE* f = f_;
+		f_           = nullptr;
+		return f != nullptr ? rwz::stdio::fclose(f) : 0;
 	}
 
 protected:
@@ -712,6 +767,12 @@ public:
 	{
 		return f_ != nullptr;
 	}
+	int close()
+	{
+		std::FILE* f = f_;
+		f_           = nullptr;
+		return f != nullptr ? rwz::stdio::fclose(f) : 0;
+	}
 
 protected:
 	int_type overflow(int_type c) override
@@ -765,22 +826,25 @@ private:
 	std::FILE* f_;
 };
 
-file_istream::file_istream(const std::string& path)
+// ---- file_istream -----------------------------------------------------------
+
+file_istream::file_istream()
         : std::istream(nullptr),
-          buf_(std::make_shared<buf>(rwz::stdio::fopen(path.c_str(), "rb")))
+          buf_(std::make_shared<buf>(nullptr))
 {
 	rdbuf(buf_.get());
-	if (!buf_->is_open()) {
+}
+
+file_istream::file_istream(const std::filesystem::path& path,
+                           std::ios_base::openmode mode)
+        : std::istream(nullptr),
+          buf_(open_buf<buf>(path, mode | std::ios_base::in, true))
+{
+	rdbuf(buf_.get());
+	if (!is_open()) {
 		setstate(std::ios::failbit);
 	}
 }
-
-file_istream::file_istream(const char* path) : file_istream(std::string(path))
-{}
-
-file_istream::file_istream(const std::filesystem::path& path)
-        : file_istream(path.string())
-{}
 
 file_istream::file_istream(file_istream&& other) noexcept
         : std::istream(std::move(other)),
@@ -792,37 +856,82 @@ file_istream::file_istream(file_istream&& other) noexcept
 
 file_istream::~file_istream() = default;
 
+void file_istream::open(const std::filesystem::path& path, std::ios_base::openmode mode)
+{
+	clear();
+	buf_ = open_buf<buf>(path, mode | std::ios_base::in, true);
+	rdbuf(buf_.get());
+	if (!is_open()) {
+		setstate(std::ios::failbit);
+	}
+}
+
+void file_istream::close()
+{
+	if (!is_open()) {
+		setstate(std::ios::failbit); // as std::ifstream::close does on
+		                             // a closed stream
+		return;
+	}
+	if (buf_->close() != 0) {
+		setstate(std::ios::failbit);
+	}
+}
+
 bool file_istream::is_open() const noexcept
 {
 	return buf_ != nullptr && buf_->is_open();
 }
 
-file_ostream::file_ostream(const std::string& path)
+// ---- file_ostream -----------------------------------------------------------
+
+file_ostream::file_ostream()
         : std::ostream(nullptr),
-          buf_(std::make_shared<buf>(rwz::stdio::fopen(path.c_str(), "wb")))
+          buf_(std::make_shared<buf>(nullptr))
 {
 	rdbuf(buf_.get());
-	if (!buf_->is_open()) {
+}
+
+file_ostream::file_ostream(const std::filesystem::path& path,
+                           std::ios_base::openmode mode)
+        : std::ostream(nullptr),
+          buf_(open_buf<buf>(path, mode | std::ios_base::out, false))
+{
+	rdbuf(buf_.get());
+	if (!is_open()) {
 		setstate(std::ios::failbit);
 	}
 }
-
-file_ostream::file_ostream(const char* path) : file_ostream(std::string(path))
-{}
-
-file_ostream::file_ostream(const std::filesystem::path& path)
-        : file_ostream(path.string())
-{}
 
 file_ostream::file_ostream(file_ostream&& other) noexcept
         : std::ostream(std::move(other)),
           buf_(std::move(other.buf_))
 {
-	rdbuf(buf_.get()); // the base move does not keep the stream buffer;
-	                   // re-attach the one that moved
+	rdbuf(buf_.get());
 }
 
 file_ostream::~file_ostream() = default;
+
+void file_ostream::open(const std::filesystem::path& path, std::ios_base::openmode mode)
+{
+	clear();
+	buf_ = open_buf<buf>(path, mode | std::ios_base::out, false);
+	rdbuf(buf_.get());
+	if (!is_open()) {
+		setstate(std::ios::failbit);
+	}
+}
+
+void file_ostream::close()
+{
+	if (!is_open()) {
+		setstate(std::ios::failbit);
+		return;
+	}
+	if (buf_->close() != 0) {
+		setstate(std::ios::failbit);
+	}
+}
 
 bool file_ostream::is_open() const noexcept
 {

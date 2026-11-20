@@ -122,7 +122,6 @@ CXX_HINT = re.compile(r"\b(class|namespace|template|std::|constexpr|nullptr|over
 DEFAULT_EXCLUDES = {"build", ".git", "external", "third_party", "src/libs"}
 
 
-
 # ---- helpers from the whole-file tool
 # std::filesystem functions the library provides as rwz::fs (same names, error_code last).
 FS_FUNCS = {
@@ -211,19 +210,6 @@ def _last_arg(text: str, open_paren: int) -> str | None:
     return None
 
 
-def families_used(text: str) -> set[str]:
-    fams = set()
-    if "rwz::posix::" in text:
-        fams.add("posix")
-    if "rwz::stdio::" in text:
-        fams.add("stdio")
-    if "rwz::win32::" in text:
-        fams.add("win32")
-    if "rwz::fs::" in text:
-        fams.add("fs")
-    return fams
-
-
 def add_includes(text: str, fams: set[str]) -> tuple[str, list[str]]:
     """Add the rwz header once, after the last include, if the file does not have it."""
     headers = sorted({INCLUDE_FOR_FAMILY[f] for f in fams if f in INCLUDE_FOR_FAMILY})
@@ -267,24 +253,6 @@ def system_includes_reachable(path: Path, root: Path, cache: dict[Path, set[str]
                 break
     cache[path] = found
     return found
-
-
-
-def rewrite_stream_types(text: str, rel: str, report: Report) -> str:
-    """std::ifstream / std::ofstream -> rwz::stdio::file_istream / file_ostream. Both derive from
-    std::istream / std::ostream, so references to those keep working. Member open() and close() do
-    not exist on the new types; they are reported."""
-    count = 0
-    for old, new in STREAM_TYPES.items():
-        pattern = re.compile(r"(?<![\w:])" + re.escape(old) + r"\b")
-        text, n = pattern.subn(new, text)
-        count += n
-    if count:
-        report.rewritten["stream types"] = report.rewritten.get("stream types", 0) + count
-    for i, line in enumerate(text.split("\n"), 1):
-        if re.search(r"\.(open|close)\s*\(", line) and "file_" not in line:
-            report.manual.append(f"{rel}:{i}: stream open()/close() is not a member of the rwzfs stream types; reopen by constructing a new stream")
-    return text
 
 
 LIB_COPY_ITEMS = ["include", "src", "CMakeLists.txt", "LICENSE"]
@@ -351,25 +319,6 @@ def scan(root: Path, excludes: set[str], libdir: str) -> list[Path]:
     return sorted(out)
 
 
-
-def rewrite_stream_types(text: str, rel: str, report: Report) -> str:
-    """std::ifstream / std::ofstream -> rwz::stdio::file_istream / file_ostream. Both derive from
-    std::istream / std::ostream, so references to those keep working. Member open() and close() do
-    not exist on the new types; they are reported."""
-    count = 0
-    for old, new in STREAM_TYPES.items():
-        pattern = re.compile(r"(?<![\w:])" + re.escape(old) + r"\b")
-        text, n = pattern.subn(new, text)
-        count += n
-    if count:
-        report.rewritten["stream types"] = report.rewritten.get("stream types", 0) + count
-    for i, line in enumerate(text.split("\n"), 1):
-        if re.search(r"\.(open|close)\s*\(", line) and "file_" not in line:
-            report.manual.append(f"{rel}:{i}: stream open()/close() is not a member of the rwzfs stream types; reopen by constructing a new stream")
-    return text
-
-
-
 @dataclass
 class Site:
     path: str                 # project-relative file
@@ -396,32 +345,57 @@ _NON_TYPE_WORDS = {"return", "if", "else", "while", "for", "switch", "case", "th
                    "sizeof", "do", "co_return", "co_await", "not", "and", "or", "using", "typename"}
 
 
+def _is_parameter_list(args: str) -> bool:
+    """True when the argument text reads as a C/C++ parameter list: "", "void", or "type name, ...".
+    A call's arguments ("buf, 1, n, fp") name values, not types, so they fail."""
+    a = args.strip()
+    if a in ("", "void"):
+        return True
+    for param in a.split(","):
+        if not re.match(r"^\s*(?:const\s+)?(?:unsigned\s+|signed\s+|struct\s+)?[A-Za-z_][\w:]*[\s*&]+[A-Za-z_]\w*\s*(?:=.*)?$", param):
+            return False
+    return True
+
+
+def _has_return_type(prefix: str, prev: str) -> bool:
+    """True when the text before the name ends in a type: on this line ("int read"), or the previous
+    line is a type-only fragment ("uint8_t" above "read(...) {"). A statement like "n = fwrite(...)" or
+    "return read(...)" is not a declaration."""
+    if prefix:
+        last = re.search(r"(\w+)$", prefix)
+        return bool(re.search(r"[\w*&>]$", prefix)) and (last is None or last.group(1) not in _NON_TYPE_WORDS)
+    if not prev or prev.endswith((";", "{", "}", ")", ",", "=")):
+        return False
+    if "(" in prev or "=" in prev or "#" in prev:
+        return False
+    last = prev.split()[-1]
+    return last not in _NON_TYPE_WORDS and bool(re.match(r"^[A-Za-z_][\w:<>,*& ]*$", prev.strip()))
+
+
 def local_definitions(rel: str, text: str) -> dict[str, list[str]]:
     """Names of functions defined or declared in this file, with the line. A call of such a name in the
     same file may be the file's own function, not the C one: DOS-emulation code, for example, has its
-    own read() and write() on I/O ports. Other files are not consulted."""
+    own read() and write() on I/O ports. Other files are not consulted.
+
+    A definition is "type name(params) {"; a declaration is "type name(params);". Both need a return type
+    before the name and a parameter list inside the parentheses. A call is "name(args);" with no type
+    before it, which is why "fwrite(buf, 1, n, fp);" is not a declaration."""
     names = POSIX_FUNCS | STDIO_FUNCS | set(WIN32_FUNCS)
     found: dict[str, list[str]] = {}
-    call = re.compile(r"(?<![\w.>:])([A-Za-z_]\w*)\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept\s*)?[{;]")
+    call = re.compile(r"(?<![\w.>:])([A-Za-z_]\w*)\s*\(([^;{}()]*)\)\s*(?:const\s*)?(?:noexcept\s*)?([{;])")
     lines = text.split("\n")
     for lineno, line in enumerate(lines, 1):
         if "#include" in line or "#define" in line:
             continue
         prev = lines[lineno - 2].rstrip() if lineno >= 2 else ""
         for m in call.finditer(line):
-            name = m.group(1)
+            name, args, end = m.group(1), m.group(2), m.group(3)
             if name not in names:
                 continue
-            prefix = line[:m.start()].rstrip()
-            if not prefix:
-                # the return type may sit on the previous line
-                typed = prev and re.search(r"[\w*&>]$", prev) and not prev.endswith((";", "{", "}"))
-                if not typed or prev.split()[-1] in _NON_TYPE_WORDS:
-                    continue
-            else:
-                last_word = re.search(r"(\w+)$", prefix)
-                if not (re.search(r"[\w*&>]$", prefix) and (last_word is None or last_word.group(1) not in _NON_TYPE_WORDS)):
-                    continue
+            if not _has_return_type(line[:m.start()].rstrip(), prev):
+                continue
+            if end == ";" and not _is_parameter_list(args):
+                continue
             found.setdefault(name, []).append(f"{rel}:{lineno}")
     return found
 
@@ -439,6 +413,9 @@ def find_sites(rel: str, text: str, has: set[str], aliases: set[str]) -> tuple[l
         r"(?<![\w.>:])(?P<ns>(?:" + prefixes + r"))::(?P<name>" +
         "|".join(sorted(map(re.escape, FS_FUNCS), key=len, reverse=True)) + r")\s*\(")
     stream_re = re.compile(r"(?<![\w:])(std::(?:i|o)fstream)\b")
+    decl_iter_re = re.compile(
+        r"(?<![\w:.])(?P<type>(?:(?:std::filesystem|" + "|".join(sorted(map(re.escape, aliases | FS_NAMESPACES), key=len, reverse=True))
+        + r")::)(?P<kind>directory_iterator))(?=\s+\w+\s*[({;=])")
     per_line_old: dict[tuple[int, str], int] = {}
     for lineno, line in enumerate(text.split("\n"), 1):
         if "#include" in line or "#define" in line:
@@ -500,6 +477,15 @@ def find_sites(rel: str, text: str, has: set[str], aliases: set[str]) -> tuple[l
                                   f"rwz::fs::{name}({inner}{sep}ec)", "manual",
                                   "std::filesystem throws without an error_code: add an std::error_code and check it",
                                   "fs"))
+        # Declarations of the iterator types ("std_fs::directory_iterator it(p);") construct the iterator,
+        # which touches the disk, but the call pattern above does not see a name followed by "(".
+        for m in decl_iter_re.finditer(line):
+            if not mask[m.start()]:
+                continue
+            sites.append(Site(rel, lineno, m.start(), m.group("type"),
+                              f"rwz::fs::{m.group('kind')}", "rewrite",
+                              f"the throwing form of rwz::fs keeps std::filesystem's exception",
+                              "fs"))
         for m in stream_re.finditer(line):
             if not mask[m.start(1)]:
                 continue
@@ -507,15 +493,11 @@ def find_sites(rel: str, text: str, has: set[str], aliases: set[str]) -> tuple[l
             new = STREAM_TYPES[old]
             sites.append(Site(rel, lineno, m.start(1), old, new, "rewrite",
                               "C++ stream type with an rwzfs stream over the stdio wrappers", "stdio"))
-        if "fstream" in line and re.search(r"\.(open|close)\s*\(", line):
-            m = re.search(r"\.(open|close)\s*\(", line)
-            sites.append(Site(rel, lineno, m.start(), m.group(0),
-                              "construct a new stream with the path instead", "manual",
-                              "stream member open()/close() has no rwzfs equivalent", None))
     return sites, silent
 
 
 def _inner_args(text: str, open_paren: int) -> str:
+    """The text between the parentheses opened at open_paren (empty if unbalanced)."""
     depth = 0
     for j in range(open_paren, min(len(text), open_paren + 400)):
         c = text[j]
@@ -529,7 +511,7 @@ def _inner_args(text: str, open_paren: int) -> str:
 
 
 def drop_sites(rel: str, text: str) -> list[Site]:
-    """C headers whose symbols are no longer used, in a source file (not a header: headers keep theirs)."""
+    """C headers whose symbols are no longer used in a source file (headers keep their includes)."""
     if Path(rel).suffix.lower() not in {".cpp", ".cc", ".cxx", ".c++"}:
         return []
     lines = text.split("\n")
@@ -541,26 +523,38 @@ def drop_sites(rel: str, text: str) -> list[Site]:
             continue
         sym = HEADER_SYMBOLS[m.group(1)] or HEADER_SYMBOLS["stdio.h"]
         if not re.search(sym, code):
-            out.append(Site(rel, lineno, 0, l, "", "drop_header", f"{m.group(1)} is no longer used in this file", None))
+            out.append(Site(rel, lineno, 0, l, "", "drop_header",
+                            f"{m.group(1)} is no longer used in this file", None))
     return out
 
 
-def apply_site(root: Path, s: Site) -> None:
+def queue_order(s: Site) -> tuple:
+    """File by file; within a file, last line and last column first, so earlier sites keep their place."""
+    return (s.path, -s.line, -s.col)
+
+
+def read_line(root: Path, s: Site) -> str:
+    return (root / s.path).read_text(encoding="utf-8", errors="surrogateescape").split("\n")[s.line - 1]
+
+
+def apply_site(root: Path, s: Site) -> bool:
+    """Applies one site. False, and nothing written, if the text there is no longer the scanned text."""
     p = root / s.path
     lines = p.read_text(encoding="utf-8", errors="surrogateescape").split("\n")
     line = lines[s.line - 1]
     if s.kind == "drop_header":
         if line != s.old:
-            raise SystemExit(f"{s.path}:{s.line} changed since it was scanned; rerun the tool")
+            return False
         del lines[s.line - 1]
     else:
         if line[s.col:s.col + len(s.old)] != s.old:
-            raise SystemExit(f"{s.path}:{s.line} changed since it was scanned; rerun the tool")
+            return False
         lines[s.line - 1] = line[:s.col] + s.new + line[s.col + len(s.old):]
     p.write_text("\n".join(lines), encoding="utf-8", errors="surrogateescape")
+    return True
 
 
-# ---- git -------------------------------------------------------------------
+# ---- git ---------------------------------------------------------------------
 
 def git(root: Path, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(root), *args], input=stdin, text=True, capture_output=True)
@@ -577,7 +571,7 @@ def dirty(root: Path) -> bool:
 
 
 def commit(root: Path, paths: list[str], subject: str, body: str) -> bool:
-    """Stage exactly `paths` and commit with a generated message. False if nothing changed."""
+    """Stages exactly `paths` and commits with the generated message. False if nothing changed."""
     if not paths:
         return False
     git(root, "add", "--", *paths)
@@ -609,10 +603,10 @@ def site_subject(s: Site) -> str:
     return f"vendor(rwzfs): {s.old.strip()} -> {s.new.strip()} in {s.path}:{s.line}"
 
 
-# ---- prompts ----------------------------------------------------------------
+# ---- prompts -----------------------------------------------------------------
 
 def show(root: Path, s: Site) -> None:
-    line = (root / s.path).read_text(encoding="utf-8", errors="surrogateescape").split("\n")[s.line - 1]
+    line = read_line(root, s)
     print()
     print(f"  {s.path}:{s.line}   {s.kind}")
     print(f"    {line.strip()}")
@@ -624,7 +618,7 @@ def show(root: Path, s: Site) -> None:
 
 
 def pick_key(question: str, allow_enter: bool = False) -> str:
-    """Ask a question; the letters in [brackets] are the answers. Returns the letter, or "" for Enter."""
+    """Asks a question; the letters in [brackets] are the answers. Returns the letter, or "" for Enter."""
     allowed = re.findall(r"\[(\w)\]", question)
     if not allowed:
         raise SystemExit(f"internal error: no answers offered for: {question}")
@@ -636,10 +630,10 @@ def pick_key(question: str, allow_enter: bool = False) -> str:
     raise SystemExit("too many invalid answers; stopped")
 
 
-# ---- main -------------------------------------------------------------------
+# ---- scanning ----------------------------------------------------------------
 
 def scan_project(root: Path, libdir: str, excludes: set[str], phase: str) -> tuple[list[Site], int]:
-    """All pending sites, in file order. phase is "replace" or "drop"."""
+    """All sites in the project, in file order. phase is "replace" (calls and types) or "drop" (headers)."""
     inc_cache: dict = {}
     out: list[Site] = []
     silent_total = 0
@@ -650,13 +644,24 @@ def scan_project(root: Path, libdir: str, excludes: set[str], phase: str) -> tup
             continue
         if phase == "replace":
             has = system_includes_reachable(path, root, inc_cache)
-            aliases = set(FS_ALIAS_DECL.findall(text))
-            sites, silent = find_sites(rel, text, has, aliases)
+            sites, silent = find_sites(rel, text, has, set(FS_ALIAS_DECL.findall(text)))
             silent_total += silent
             out.extend(sites)
         else:
             out.extend(drop_sites(rel, text))
     return out, silent_total
+
+
+def refresh_file(root: Path, args, excludes: set[str], queue: list[Site], path: str,
+                 skipped: set[tuple]) -> list[Site]:
+    """Drops this file's queued sites and rescans the file alone, after its contents changed."""
+    p = root / path
+    text = p.read_text(encoding="utf-8", errors="surrogateescape")
+    has = system_includes_reachable(p, root, {})
+    sites, _ = find_sites(path, text, has, set(FS_ALIAS_DECL.findall(text)))
+    rest = [q for q in queue if q.path != path]
+    fresh = [q for q in sites if site_key(q) not in skipped]
+    return sorted(rest + fresh, key=queue_order)
 
 
 def header_commit(root: Path, libdir: str, excludes: set[str]) -> None:
@@ -739,26 +744,29 @@ def main(argv: list[str]) -> int:
     # 2. header additions
     header_commit(root, args.libdir, excludes)
 
-    # 3-4. replacements, one per commit; sites that need a person are shown for a manual edit
+    # 3-4. replacements, one per commit. The sites are scanned once, into a queue. Within a file the
+    # queue runs bottom-up, so a change never moves a site that is still waiting. A manual edit rescans
+    # only the file it touched.
+    queue = sorted(scan_project(root, args.libdir, excludes, "replace")[0], key=queue_order)
     skipped: set[tuple] = set()
     quit_now = False
-    while not quit_now:
-        pending, _ = scan_project(root, args.libdir, excludes, "replace")
-        pending = [s for s in pending if site_key(s) not in skipped]
-        if not pending:
-            break
-        s = pending[0]
+    while queue and not quit_now:
+        s = queue.pop(0)
+        if site_key(s) in skipped:
+            continue
         show(root, s)
         if s.kind == "rewrite":
             choice = pick_key("apply this replacement? [y]es / [n]o (skip) / [q]uit")
             if choice == "q":
                 quit_now = True
             elif choice == "y":
-                before = (root / s.path).read_text(encoding="utf-8", errors="surrogateescape").split("\n")[s.line - 1]
-                apply_site(root, s)
-                after = (root / s.path).read_text(encoding="utf-8", errors="surrogateescape").split("\n")[s.line - 1]
+                before = read_line(root, s)
+                if not apply_site(root, s):
+                    print("  the line changed since it was queued; rescanning this file")
+                    queue = refresh_file(root, args, excludes, queue, s.path, skipped)
+                    continue
+                after = read_line(root, s)
                 commit(root, [s.path], site_subject(s), site_body(s, before, after))
-                # the commit changes the line numbers: the next iteration rescans
             else:
                 skipped.add(site_key(s))
         else:
@@ -768,12 +776,11 @@ def main(argv: list[str]) -> int:
             if choice == "q":
                 quit_now = True
             else:
-                # Whatever happens, this site is not offered again in this run. After an edit, the
-                # file's changes are committed as one commit.
                 skipped.add(site_key(s))
                 if choice == "" and git(root, "diff", "--quiet", "--", s.path).returncode != 0:
                     commit(root, [s.path], f"vendor(rwzfs): manual change at {s.path}:{s.line}",
                            site_body(s, s.old, "(edited by hand)"))
+                    queue = refresh_file(root, args, excludes, queue, s.path, skipped)
                 elif choice == "":
                     print("  no change in that file; the site is skipped")
 
@@ -781,19 +788,20 @@ def main(argv: list[str]) -> int:
         print("stopped. Rerun to continue with the remaining sites.")
         return 0
 
-    # 5. unused C headers
-    while True:
-        drops, _ = scan_project(root, args.libdir, excludes, "drop")
-        drops = [s for s in drops if site_key(s) not in skipped]
-        if not drops:
-            break
-        s = drops[0]
+    # 5. unused C headers: one scan, then one commit per removal (bottom-up within each file)
+    drops = sorted(scan_project(root, args.libdir, excludes, "drop")[0], key=queue_order)
+    while drops:
+        s = drops.pop(0)
+        if site_key(s) in skipped:
+            continue
         show(root, s)
         choice = pick_key("remove this include? [y]es / [n]o (skip) / [q]uit")
         if choice == "q":
             break
         if choice == "y":
-            apply_site(root, s)
+            if not apply_site(root, s):
+                print("  the line changed since it was queued; skipped")
+                continue
             commit(root, [s.path], site_subject(s), site_body(s, s.old, ""))
         else:
             skipped.add(site_key(s))

@@ -771,3 +771,19 @@ void resize_file(const path& p, std::uintmax_t size)
 }
 
 } // namespace rwz::fs
+
+namespace rwz::fs {
+
+path proximate(const path& p, std::error_code& ec)
+{
+	const path base = current_path(ec);
+	if (ec) {
+		return {};
+	}
+	if (!in_archive_view(p) && !in_archive_view(base)) {
+		return stdfs::proximate(p, base, ec);
+	}
+	return resolve_lexical(p).lexically_proximate(resolve_lexical(base));
+}
+
+} // namespace rwz::fs

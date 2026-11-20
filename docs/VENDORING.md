@@ -86,11 +86,10 @@ Each site the tool cannot replace with confidence is shown with a suggested sign
 `rwz::fs::exists(p, ec)` for a `std::filesystem` call without an error code. Edit the file, save, and
 press Enter. The tool commits the file's changes as one commit with the generated message. Those sites
 are typically:
-- `std::filesystem` calls without an `std::error_code` (the standard form throws);
+- `std::filesystem` calls without an `std::error_code` for functions that have no throwing form (see USAGE);
 - an unqualified C name (`read`, `write`, `open`) whose header is not included in the file, which may be
   another function with the same name;
 - `remove` or `rename` whose first argument does not look like a path;
-- stream `open()` / `close()` members, which have no rwzfs equivalent.
 
 ## What it leaves alone, and why
 
@@ -118,8 +117,7 @@ host C library, and it does not go through the archive.
   it in the report: port it by hand, adding an `std::error_code` and checking it. Type names such as
   `std_fs::path` are never changed (`rwz::fs::path` is the same type).
 - **C++ streams.** `std::ifstream` and `std::ofstream` declarations are rewritten to
-  `rwz::stdio::file_istream` and `file_ostream`. Member `open()` and `close()` have no equivalent:
-  construct a new stream instead. Those calls are listed in the report.
+  `rwz::stdio::file_istream` and `file_ostream`. The rwz streams have the same `open()`, `close()`, constructors and openmode flags, so those calls need no change.
 - **C++23.** The library needs C++23 (`std::expected`). The script warns when `CMAKE_CXX_STANDARD` is
   below 23. The library sets 23 for its own targets; the project's targets that include library headers
   must also use 23.

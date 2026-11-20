@@ -46,6 +46,10 @@ void permissions(const path& p, std::filesystem::perms perms, std::error_code& e
 [[nodiscard]] bool equivalent(const path& a, const path& b);
 // FS-14 (2x) / CWD-01: returns the archive cwd when one is set.
 [[nodiscard]] path current_path(std::error_code& ec);
+// std::filesystem::proximate(p, ec): p relative to the current directory. On
+// archive paths the computation is lexical (there is nothing to resolve on the
+// host).
+[[nodiscard]] path proximate(const path& p, std::error_code& ec);
 [[nodiscard]] path current_path();
 // CWD-02 (new): sets the working directory. Overload of
 // std::filesystem::current_path(p, ec).

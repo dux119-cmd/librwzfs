@@ -176,7 +176,9 @@ std::uintmax_t directory_entry::file_size(std::error_code& ec) const
 
 // directory_iterator
 
-directory_iterator::directory_iterator(const stdfs::path& in, std::error_code& ec)
+directory_iterator::directory_iterator(const stdfs::path& in,
+                                       stdfs::directory_options options,
+                                       std::error_code& ec)
 {
 	const auto p = resolve(in, ec);
 	if (ec) {
@@ -195,7 +197,7 @@ directory_iterator::directory_iterator(const stdfs::path& in, std::error_code& e
 		valid_   = true;
 		return;
 	}
-	stdfs::directory_iterator it(p, ec);
+	stdfs::directory_iterator it(p, options, ec);
 	if (ec) {
 		return;
 	}
@@ -424,14 +426,19 @@ bool operator==(const recursive_directory_iterator& a,
 
 namespace rwz::fs {
 
-directory_iterator::directory_iterator(const stdfs::path& in)
+directory_iterator::directory_iterator(const stdfs::path& in,
+                                       stdfs::directory_options options)
 {
 	std::error_code ec = {};
-	directory_iterator listed(in, ec);
+	directory_iterator listed(in, options, ec);
 	if (ec) {
 		throw stdfs::filesystem_error("directory_iterator", in, ec);
 	}
 	*this = std::move(listed);
 }
+
+directory_iterator::directory_iterator(const stdfs::path& in)
+        : directory_iterator(in, stdfs::directory_options::none)
+{}
 
 } // namespace rwz::fs

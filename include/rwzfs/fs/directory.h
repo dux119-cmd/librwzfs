@@ -68,9 +68,19 @@ public:
 	using reference         = const directory_entry&;
 
 	directory_iterator() = default;
-	directory_iterator(const std::filesystem::path& p, std::error_code& ec);
-	// Throws std::filesystem::filesystem_error when the directory cannot be
-	// listed.
+	// Same signatures as std::filesystem::directory_iterator. Options apply
+	// to host directories; archive listings have no permission errors and
+	// no directory symlinks to follow, so they ignore them.
+	directory_iterator(const std::filesystem::path& p,
+	                   std::filesystem::directory_options options,
+	                   std::error_code& ec);
+	directory_iterator(const std::filesystem::path& p, std::error_code& ec)
+	        : directory_iterator(p, std::filesystem::directory_options::none, ec)
+	{}
+	// Throwing forms: std::filesystem::filesystem_error when the directory
+	// cannot be listed.
+	directory_iterator(const std::filesystem::path& p,
+	                   std::filesystem::directory_options options);
 	explicit directory_iterator(const std::filesystem::path& p);
 
 	[[nodiscard]] reference operator*() const noexcept

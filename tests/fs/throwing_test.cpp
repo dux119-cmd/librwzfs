@@ -86,3 +86,28 @@ TEST_F(ThrowingArchive, DirectoryIteratorThrowsForAMissingDirectory)
 	rwz::fs::directory_iterator ok(RWZ_ROOT "/DIR");
 	EXPECT_FALSE(ok == rwz::fs::directory_iterator{});
 }
+
+TEST_F(ThrowingArchive, DirectoryIteratorAcceptsOptions)
+{
+	std::error_code ec = {};
+	rwz::fs::directory_iterator it(RWZ_ROOT "/DIR",
+	                               fs::directory_options::skip_permission_denied,
+	                               ec);
+	EXPECT_FALSE(ec);
+	EXPECT_FALSE(it == rwz::fs::directory_iterator{});
+	EXPECT_THROW(rwz::fs::directory_iterator(RWZ_ROOT "/NOPE",
+	                                         fs::directory_options::none),
+	             fs::filesystem_error);
+}
+
+TEST(ThrowingForms, HostDirectoryIteratorWithOptions)
+{
+	TempDir dir;
+	std::ofstream(dir.path() / "f.txt") << "x";
+	std::error_code ec = {};
+	rwz::fs::directory_iterator it(dir.path(),
+	                               fs::directory_options::skip_permission_denied,
+	                               ec);
+	EXPECT_FALSE(ec);
+	EXPECT_FALSE(it == rwz::fs::directory_iterator{});
+}

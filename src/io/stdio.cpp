@@ -83,7 +83,10 @@ std::map<std::FILE*, std::filesystem::path>& copies()
 	return m;
 }
 
-std::FILE* open_archive_copy(const route& r, const rwz::archive::entry& e)
+// mode is the caller's read mode ("r" or "rb"): text mode translates CRLF
+// exactly as on a host file.
+std::FILE* open_archive_copy(const route& r, const rwz::archive::entry& e,
+                             const char* mode)
 {
 	std::error_code temp_ec{};
 	const auto dir = std::filesystem::temp_directory_path(temp_ec);
@@ -136,8 +139,9 @@ std::FILE* open_archive_copy(const route& r, const rwz::archive::entry& e)
 		return fail(errno != 0 ? errno : EIO, nullptr);
 	}
 
-	// Reopen read-only: the stream must not accept writes.
-	std::FILE* in = std::fopen(path.string().c_str(), "rb");
+	// Reopen with the caller's read mode: it is read-only, so writes to it
+	// fail as on POSIX.
+	std::FILE* in = std::fopen(path.string().c_str(), mode);
 	if (in == nullptr) {
 		std::error_code rm_ec{};
 		std::filesystem::remove(path, rm_ec);
@@ -149,7 +153,7 @@ std::FILE* open_archive_copy(const route& r, const rwz::archive::entry& e)
 }
 #endif // _WIN32
 
-std::FILE* open_archive_stream(const route& r)
+std::FILE* open_archive_stream(const route& r, const char* mode)
 {
 	if (!r.backend) {
 		errno = ENOTSUP;
@@ -172,9 +176,9 @@ std::FILE* open_archive_stream(const route& r)
 	// open_lazy): nothing is copied, and the reads go through dwarfs's
 	// block cache. Windows has no callback stream: use CreateFileW.
 #if defined(_WIN32)
-	return open_archive_copy(r, *e);
+	return open_archive_copy(r, *e, mode);
 #else
-	return open_lazy(cow::layer_of(r), "rb", *e);
+	return open_lazy(cow::layer_of(r), mode, *e);
 #endif
 }
 
@@ -455,7 +459,7 @@ std::FILE* open_overlay_stream(const route& r, const char* mode)
 		if (n->where == cow::origin::overlay) {
 			return std::fopen(n->host.string().c_str(), mode);
 		}
-		return open_archive_stream(r);
+		return open_archive_stream(r, mode);
 	}
 	const bool create   = mode_has(mode, 'w') || mode_has(mode, 'a');
 	const bool truncate = mode_has(mode, 'w');
@@ -497,7 +501,7 @@ std::FILE* fopen(const char* path, const char* mode)
 			errno = EROFS;
 			return nullptr;
 		}
-		return open_archive_stream(*r);
+		return open_archive_stream(*r, mode);
 	}
 	return std::fopen(p->string().c_str(), mode);
 }

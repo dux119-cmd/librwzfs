@@ -97,4 +97,24 @@ TEST_F(StdioWindows, FcloseRemovesTheTemporaryCopy)
 	EXPECT_EQ(copy_count(), before);
 }
 
+// Text mode translates CRLF on Windows, as it does for a host file; binary mode
+// returns the bytes.
+TEST_F(StdioWindows, TextModeTranslatesCrLfLikeAHostFile)
+{
+	backend_->add_file("TEXT.TXT", "one\r\ntwo\r\n");
+	char buf[32] = {};
+
+	std::FILE* text = stdio::fopen("C:/RWZ/TEXT.TXT", "r");
+	ASSERT_NE(text, nullptr);
+	EXPECT_EQ(std::fread(buf, 1, sizeof(buf), text), 8u); // "one\ntwo\n"
+	EXPECT_EQ(std::string(buf, 8), "one\ntwo\n");
+	EXPECT_EQ(stdio::fclose(text), 0);
+
+	std::FILE* binary = stdio::fopen("C:/RWZ/TEXT.TXT", "rb");
+	ASSERT_NE(binary, nullptr);
+	EXPECT_EQ(std::fread(buf, 1, sizeof(buf), binary), 10u); // the bytes as
+	                                                         // stored
+	EXPECT_EQ(stdio::fclose(binary), 0);
+}
+
 #endif // defined(_WIN32)

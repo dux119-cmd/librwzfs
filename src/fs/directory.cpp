@@ -111,37 +111,44 @@ stdfs::file_status directory_entry::status(std::error_code& ec) const
 	                          static_cast<stdfs::perms>(info_.mode & 07777));
 }
 
-bool directory_entry::is_directory(std::error_code& ec) const
+stdfs::file_status directory_entry::symlink_status(std::error_code& ec) const
 {
 	if (host_) {
-		return host_->is_directory(ec);
-	}
-	if (info_.type == rwz::archive::kind::symlink) {
-		return rwz::fs::is_directory(path_, ec);
+		return host_->symlink_status(ec);
 	}
 	ec.clear();
-	return info_.type == rwz::archive::kind::directory;
+	return stdfs::file_status(file_type_of(info_.type),
+	                          static_cast<stdfs::perms>(info_.mode & 07777));
+}
+
+bool directory_entry::exists(std::error_code& ec) const
+{
+	const auto s = status(ec);
+	return !ec && stdfs::exists(s);
+}
+
+bool directory_entry::is_directory(std::error_code& ec) const
+{
+	const auto s = status(ec);
+	return !ec && stdfs::is_directory(s);
 }
 
 bool directory_entry::is_regular_file(std::error_code& ec) const
 {
-	if (host_) {
-		return host_->is_regular_file(ec);
-	}
-	if (info_.type == rwz::archive::kind::symlink) {
-		return rwz::fs::is_regular_file(path_, ec);
-	}
-	ec.clear();
-	return info_.type == rwz::archive::kind::file;
+	const auto s = status(ec);
+	return !ec && stdfs::is_regular_file(s);
 }
 
 bool directory_entry::is_symlink(std::error_code& ec) const
 {
-	if (host_) {
-		return host_->is_symlink(ec);
-	}
-	ec.clear();
-	return info_.type == rwz::archive::kind::symlink;
+	const auto s = symlink_status(ec);
+	return !ec && stdfs::is_symlink(s);
+}
+
+bool directory_entry::is_other(std::error_code& ec) const
+{
+	const auto s = status(ec);
+	return !ec && stdfs::is_other(s);
 }
 
 std::uintmax_t directory_entry::file_size(std::error_code& ec) const
@@ -149,29 +156,8 @@ std::uintmax_t directory_entry::file_size(std::error_code& ec) const
 	if (host_) {
 		return host_->file_size(ec);
 	}
-	if (info_.type != rwz::archive::kind::symlink) {
-		ec.clear();
-		return info_.size;
-	}
-	const auto target = resolve(path_, ec);
-	if (ec) {
-		return 0;
-	}
-	if (const auto r = mounts::find(target)) {
-		if (!r->backend) {
-			ec = std::make_error_code(std::errc::not_supported);
-			return 0;
-		}
-		const auto n = rwz::overlay::cow::lookup(
-		        rwz::overlay::cow::layer_of(*r));
-		if (!n) {
-			ec = std::make_error_code(std::errc::no_such_file_or_directory);
-			return 0;
-		}
-		ec.clear();
-		return n->info.size;
-	}
-	return stdfs::file_size(target, ec);
+	ec.clear();
+	return info_.size;
 }
 
 // directory_iterator

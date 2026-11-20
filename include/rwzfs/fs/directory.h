@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include "rwzfs/archive/backend.h"
@@ -25,11 +26,70 @@ public:
 		return path_;
 	}
 
+	// The queries of std::filesystem::directory_entry. The error_code forms
+	// return the answer and set ec; the forms without one throw
+	// std::filesystem::filesystem_error with the entry's path, as the
+	// standard library does. status-style queries follow symlinks;
+	// symlink_status and is_symlink do not.
 	[[nodiscard]] std::filesystem::file_status status(std::error_code& ec) const;
+	[[nodiscard]] std::filesystem::file_status symlink_status(std::error_code& ec) const;
+	[[nodiscard]] bool exists(std::error_code& ec) const;
 	[[nodiscard]] bool is_directory(std::error_code& ec) const;
 	[[nodiscard]] bool is_regular_file(std::error_code& ec) const;
 	[[nodiscard]] bool is_symlink(std::error_code& ec) const;
+	[[nodiscard]] bool is_other(std::error_code& ec) const;
 	[[nodiscard]] std::uintmax_t file_size(std::error_code& ec) const;
+
+	[[nodiscard]] std::filesystem::file_status status() const
+	{
+		return checked("directory_entry::status",
+		               [this](std::error_code& e) { return status(e); });
+	}
+	[[nodiscard]] std::filesystem::file_status symlink_status() const
+	{
+		return checked("directory_entry::symlink_status",
+		               [this](std::error_code& e) {
+			               return symlink_status(e);
+		               });
+	}
+	[[nodiscard]] bool exists() const
+	{
+		return checked("directory_entry::exists",
+		               [this](std::error_code& e) { return exists(e); });
+	}
+	[[nodiscard]] bool is_directory() const
+	{
+		return checked("directory_entry::is_directory",
+		               [this](std::error_code& e) {
+			               return is_directory(e);
+		               });
+	}
+	[[nodiscard]] bool is_regular_file() const
+	{
+		return checked("directory_entry::is_regular_file",
+		               [this](std::error_code& e) {
+			               return is_regular_file(e);
+		               });
+	}
+	[[nodiscard]] bool is_symlink() const
+	{
+		return checked("directory_entry::is_symlink",
+		               [this](std::error_code& e) {
+			               return is_symlink(e);
+		               });
+	}
+	[[nodiscard]] bool is_other() const
+	{
+		return checked("directory_entry::is_other",
+		               [this](std::error_code& e) { return is_other(e); });
+	}
+	[[nodiscard]] std::uintmax_t file_size() const
+	{
+		return checked("directory_entry::file_size",
+		               [this](std::error_code& e) {
+			               return file_size(e);
+		               });
+	}
 
 	[[nodiscard]] static directory_entry from_host(
 	        const std::filesystem::directory_entry& e);
@@ -37,6 +97,18 @@ public:
 	                                                  rwz::archive::entry info);
 
 private:
+	template <typename F>
+	auto checked(const char* operation, F query) const
+	        -> decltype(query(std::declval<std::error_code&>()))
+	{
+		std::error_code ec = {};
+		auto result        = query(ec);
+		if (ec) {
+			throw std::filesystem::filesystem_error(operation, path_, ec);
+		}
+		return result;
+	}
+
 	std::filesystem::path path_{};
 	std::optional<std::filesystem::directory_entry> host_{};
 	rwz::archive::entry info_{}; // used when host_ is empty

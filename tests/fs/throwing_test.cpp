@@ -111,3 +111,37 @@ TEST(ThrowingForms, HostDirectoryIteratorWithOptions)
 	EXPECT_FALSE(ec);
 	EXPECT_FALSE(it == rwz::fs::directory_iterator{});
 }
+
+TEST(DirectoryEntryQueries, HostEntriesAnswerWithAndWithoutErrorCode)
+{
+	TempDir dir;
+	std::ofstream(dir.path() / "f.txt") << "12345";
+	fs::create_directories(dir.path() / "sub");
+	for (const auto& entry : rwz::fs::directory_iterator(dir.path())) {
+		if (entry.path().filename() == "f.txt") {
+			EXPECT_TRUE(entry.exists());
+			EXPECT_TRUE(entry.is_regular_file());
+			EXPECT_FALSE(entry.is_directory());
+			EXPECT_EQ(entry.file_size(), 5u);
+		} else {
+			EXPECT_TRUE(entry.is_directory());
+		}
+		std::error_code ec = {};
+		EXPECT_TRUE(entry.exists(ec));
+		EXPECT_FALSE(ec);
+	}
+}
+
+TEST_F(ThrowingArchive, ArchiveEntriesAnswerTheSameQueries)
+{
+	int regular = 0;
+	for (const auto& entry : rwz::fs::directory_iterator(RWZ_ROOT "/DIR")) {
+		if (entry.exists() && entry.is_regular_file()) {
+			++regular;
+			EXPECT_EQ(entry.file_size(), 7u);
+			EXPECT_FALSE(entry.is_symlink());
+			EXPECT_FALSE(entry.is_other());
+		}
+	}
+	EXPECT_EQ(regular, 1);
+}

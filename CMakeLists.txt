@@ -297,6 +297,7 @@ if(RWZFS_BUILD_TESTS)
     tests/fs/throwing_test.cpp
     tests/fs/proximate_test.cpp
     tests/io/stdio_open_modes_test.cpp
+    tests/io/stdio_api_test.cpp
     tests/io/stdio_archive_test.cpp
     tests/io/stdio_lazy_test.cpp
     tests/io/stdio_callbacks_test.cpp

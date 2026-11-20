@@ -138,3 +138,24 @@ The tool was run on a small git project with an `open`, `read`, `fopen`, `fclose
 `close` and an unused header. Each replacement was one commit with its generated message; the header
 commit came before the code commits; the manual site, edited by hand, was committed as one commit. The
 result built with CMake. The rwzfs side of the replacements is covered by the library's own tests.
+
+## Refreshing the vendored library
+
+When rwzfs changes, bring a project's vendored copy up to date with one command:
+
+    python3 tools/rwzfs_vendor.py <project-root> --refresh [--library PATH]
+
+It replaces `<libdir>` with the current library and commits the change alone, with the library's content id
+and source revision in the message. It asks before committing. It does not touch your code, the CMake
+lines, or any replacement: the code keeps calling `rwz::` names, which the new library still provides.
+
+- The copy records its content id in `<libdir>/.vendored-from`. The up-to-date test compares the files
+  themselves, so a stamp cannot claim a state the files do not have.
+- It refuses to run over uncommitted changes in the vendored directory (`--allow-dirty` overrides this,
+  and the commit then includes them, so use it deliberately).
+- Declining the prompt, or any error after the copy, restores the directory to the last commit.
+- Projects vendored before this option have no stamp; the first refresh treats them as unknown and
+  replaces the copy if it differs.
+
+Check the library's API changes against your code before you refresh: a removed or renamed function
+breaks the build, which the refresh does not check.

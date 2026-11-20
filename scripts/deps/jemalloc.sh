@@ -11,7 +11,7 @@ build_jemalloc() {
   fi
   # Release tarball: it ships the generated configure script. Only the static library is built.
   # jemalloc keeps default symbol visibility: it must export malloc, free and friends.
-  fetch_archive "$JEMALLOC_URL" "jemalloc-$JEMALLOC_VERSION.tar.bz2" bz2
+  fetch_archive "$JEMALLOC_URL" "jemalloc-$JEMALLOC_VERSION.tar.bz2" bz2 "$JEMALLOC_SHA256"
   (cd "$DEPS_WORK/jemalloc-$JEMALLOC_VERSION" && ./configure --prefix="$DEPS_PREFIX" \
       --disable-shared --enable-static --disable-cxx --disable-doc \
     && make -j"$JOBS" build_lib_static \

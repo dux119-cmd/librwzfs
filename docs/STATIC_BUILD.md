@@ -60,5 +60,5 @@ from scratch. To force a rebuild without a version change, delete `build-deps/`.
 - jemalloc is linked by rwzfs by default (`RWZFS_USE_JEMALLOC`). It replaces malloc in the final
   executable, so it is process-wide.
 - Building takes a long time on one CPU. Keep `build-deps/` between builds.
-- The tarballs (Boost, jemalloc) are not checksummed yet. Add a checksum to their step before relying
-  on them for a release.
+- Release archives (Boost, jemalloc) are pinned by SHA-256 in `versions.sh`. `fetch_archive` checks the
+  hash before extracting, and deletes a mismatched download. Git-cloned sources are pinned by tag.

@@ -8,7 +8,7 @@ build_boost() {
   # Boost builds only the listed libraries: compiled (chrono, filesystem, program_options, process) and
   # header-only (the rest). This is the list dwarfs includes.
   local src
-  fetch_archive "$BOOST_URL" "boost-$BOOST_VERSION-cmake.tar.gz" gz
+  fetch_archive "$BOOST_URL" "boost-$BOOST_VERSION-cmake.tar.xz" xz "$BOOST_SHA256"
   src="$DEPS_WORK/boost-$BOOST_VERSION"
   cmake_dep boost "$src" \
     -DBOOST_INCLUDE_LIBRARIES="chrono;filesystem;program_options;process;convert;range;iterator;container_hash;algorithm;uuid;core;container;config;compat;align;accumulators;asio;assert" \

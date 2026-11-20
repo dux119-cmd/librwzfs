@@ -19,8 +19,11 @@ PHMAP_REPO=greg7mdp/parallel-hashmap;     PHMAP_TAG=v1.3.12
 GTEST_REPO=google/googletest;             GTEST_TAG=v1.17.0
 DWARFS_REPO=mhx/dwarfs;                   DWARFS_TAG=v0.15.5
 
-# Release archives (not git): the URL and the file name are built from the version.
-BOOST_VERSION=1.90.0
-BOOST_URL="https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-cmake.tar.gz"
-JEMALLOC_VERSION=5.3.0
+# Release archives (not git): the URL, the file name and the SHA-256 are pinned here. A download whose
+# hash does not match stops the build before anything is extracted.
+BOOST_VERSION=1.92.0
+BOOST_URL="https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-cmake.tar.xz"
+BOOST_SHA256=9bed76128d4e46755dbe818487788c6fceb6f72b378f4daa49b7e1e600d9088d
+JEMALLOC_VERSION=5.4.0
 JEMALLOC_URL="https://github.com/jemalloc/jemalloc/releases/download/${JEMALLOC_VERSION}/jemalloc-${JEMALLOC_VERSION}.tar.bz2"
+JEMALLOC_SHA256=200776fac271093e7c2f21edd6d62657ecd2be578d9328633f2a86bfa6ef4f1d

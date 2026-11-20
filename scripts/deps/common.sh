@@ -131,14 +131,30 @@ fetch_tag() { # name owner/repo tag
   echo "$dir"
 }
 
-# Downloads a release archive into $DEPS_WORK and extracts it there (the directory is named by the archive).
-# parent (DEPS_WORK). kind: gz or bz2.
-fetch_archive() { # url file-name kind
-  local file="$DEPS_WORK/$2"
+# SHA-256 of a file: sha256sum (Linux, Git Bash) or shasum (macOS).
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+# Downloads a release archive into $DEPS_WORK, checks its SHA-256, and extracts it there. The archive
+# is extracted into a directory named by the archive. kind: gz, bz2 or xz.
+fetch_archive() { # url file-name kind sha256
+  local file="$DEPS_WORK/$2" got
   curl -fsSL "$1" -o "$file"
+  got=$(sha256_of "$file")
+  if [[ "$got" != "$4" ]]; then
+    echo "error: $2 has sha256 $got, expected $4. Not extracted." >&2
+    rm -f "$file"
+    exit 1
+  fi
   case "$3" in
     gz)  tar ${TAR_LOCAL[@]+"${TAR_LOCAL[@]}"} -xzf "$file" -C "$DEPS_WORK" ;;
     bz2) tar ${TAR_LOCAL[@]+"${TAR_LOCAL[@]}"} -xjf "$file" -C "$DEPS_WORK" ;;
+    xz)  tar ${TAR_LOCAL[@]+"${TAR_LOCAL[@]}"} -xJf "$file" -C "$DEPS_WORK" ;;
     *) echo "error: unknown archive kind $3" >&2; exit 1 ;;
   esac
 }

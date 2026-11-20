@@ -107,6 +107,11 @@ no copy.
 - **Creating an archive** needs the dwarfs writer, which comes from the managed dependencies or a system
   install.
 
+## Command-line tool
+
+`rwz-tool` opens an archive with its overlay (`open`), writes a revised archive from the changes in an
+overlay (`revise`), and creates an archive from a game directory (`create`). See `docs/USAGE.md`.
+
 ## Building
 
 Requirements: CMake 3.21 or newer, a C++23 compiler (GCC 14 is what the test suite runs on; Clang and MSVC

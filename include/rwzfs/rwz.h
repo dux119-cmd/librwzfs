@@ -5,6 +5,7 @@
 // get everything.
 
 #include "rwzfs/archive/create.h"
+#include "rwzfs/fs/archive_path.h"
 #include "rwzfs/fs/filesystem.h"
 #include "rwzfs/io/stdio.h"
 #include "rwzfs/mount.h"

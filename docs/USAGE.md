@@ -189,3 +189,21 @@ archive goes straight to `std::filesystem`, so its exceptions come out unchanged
 archive view throws `std::filesystem::filesystem_error` with the same operation name and path, so code
 that already handles `std::filesystem` needs no change. (The directory iterator's constructor always takes
 this second route, since its storage is shared with the archive listing.)
+
+## Command-line tool (rwz-tool)
+
+`rwz-tool` (built with dwarfs, from `examples/rwz_tool.cpp`) runs the three common operations without writing code:
+
+    rwz-tool open   <archive> [--overlay-root DIR]     # mount, then a shell on the merged view
+    rwz-tool revise <archive> [--overlay-root DIR]     # report the overlay's changes, then write a revision
+    rwz-tool create <name> <source-dir> [--out-dir DIR] [--compression SPEC]
+
+- `open` mounts the archive (and its overlay) at the archive root and runs a shell with `ls`, `cat`, `stat`,
+  `put`, `rm`, `mkdir`. Changes go to the overlay, as they do in a program.
+- `revise` mounts the archive with its overlay, counts what the overlay changes (files written, deleted,
+  directories recreated), and writes `<stem>-revN.dwarfs` beside the original from the merged view. Nothing is
+  written if the overlay is empty. The original archive is not changed.
+- `create` archives a directory as `<out-dir>/<name>.dwarfs` (`.dwarfs` is added if missing). It refuses to
+  overwrite an existing file.
+
+`--overlay-root` sets the write root; without it the library's default is used.

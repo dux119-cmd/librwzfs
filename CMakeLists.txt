@@ -349,6 +349,12 @@ if(RWZFS_WITH_DWARFS AND RWZFS_BUILD_TESTS)
   add_executable(rwzfs_example examples/usage.cpp)
   target_link_libraries(rwzfs_example PRIVATE rwzfs)
   add_test(NAME rwzfs_example COMMAND rwzfs_example ${CMAKE_BINARY_DIR}/example-work)
+
+  # rwz-tool: open, revise and create archives from the command line (docs/USAGE.md).
+  add_executable(rwz-tool examples/rwz_tool.cpp)
+  target_link_libraries(rwz-tool PRIVATE rwzfs)
+  add_test(NAME rwz_tool_usage COMMAND rwz-tool)
+  set_tests_properties(rwz_tool_usage PROPERTIES WILL_FAIL TRUE)
 endif()
 
 # Read benchmark (docs/BENCHMARK.md): host tree vs mounted archive. POSIX only.

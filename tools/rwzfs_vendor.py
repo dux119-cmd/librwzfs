@@ -372,7 +372,8 @@ def render_block(libdir: str, with_dwarfs: bool, links: list[str], deps: str) ->
     ]
     if deps == "vcpkg" and with_dwarfs:
         lines += [
-            "# vcpkg (the default) installs dwarfs's dependencies. Configure with the vcpkg toolchain:",
+            "# vcpkg (the default) installs dwarfs's dependencies. The dwarfs port and static triplets are set above",
+            "# project(). Configure with the vcpkg toolchain:",
             "#   -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake   (or set VCPKG_ROOT)",
             "# To build them from source instead:  -DRWZFS_DEPS=scripts",
             "# To use libraries already installed:  -DRWZFS_DEPS=system",
@@ -398,6 +399,44 @@ def link_visibility(text: str, target: str, current: str = "PRIVATE") -> str:
     return current
 
 
+PRE_BEGIN = "# --- rwzfs: vcpkg overlay (set before project(), where the vcpkg toolchain reads it) ---"
+PRE_END = "# --- end rwzfs overlay ---"
+PROJECT_RE = re.compile(r"^[ \t]*project[ \t]*\(", re.M | re.I)  # spaces only: \\s would match the newline before it
+
+
+def render_pre(libdir: str) -> str:
+    """Adds the vendored dwarfs port and static triplets to vcpkg's overlay lists. It must sit before project():
+    the vcpkg toolchain installs the manifest during project(). The lists are appended to, not replaced, so a
+    project's own overlay ports and triplets keep working. Appending twice is a no-op."""
+    lines = [PRE_BEGIN]
+    for var, sub in (("VCPKG_OVERLAY_PORTS", "vcpkg-ports"), ("VCPKG_OVERLAY_TRIPLETS", "vcpkg-triplets")):
+        lines += [
+            f'set(_rwz_overlay "${{CMAKE_CURRENT_SOURCE_DIR}}/{libdir}/{sub}")',
+            f"list(FIND {var} \"${{_rwz_overlay}}\" _rwz_found)",
+            "if(_rwz_found EQUAL -1)",
+            f'  list(APPEND {var} "${{_rwz_overlay}}")',
+            "endif()",
+            "unset(_rwz_overlay)",
+            "unset(_rwz_found)",
+        ]
+    lines.append(PRE_END)
+    return "\n".join(lines)
+
+
+def place_pre(text: str, pre: str | None) -> str:
+    """Replaces the overlay block (or removes it when pre is None), placed before the first project() call."""
+    if PRE_BEGIN in text and PRE_END in text:
+        a = text.index(PRE_BEGIN)
+        b = text.index(PRE_END) + len(PRE_END)
+        text = text[:a] + text[b:].lstrip("\n")  # the blank lines after the block go with it
+    if pre is None:
+        return text
+    m = PROJECT_RE.search(text)
+    if not m:
+        return text  # no project() to place it before: patch_cmake reports this
+    return text[:m.start()] + pre + "\n\n" + text[m.start():]
+
+
 def patch_cmake(root: Path, libdir: str, with_dwarfs: bool, report: Report, dry: bool, deps: str = "vcpkg") -> str:
     """Adds the vendored library to the project (the first vendoring)."""
     cml = root / "CMakeLists.txt"
@@ -408,7 +447,10 @@ def patch_cmake(root: Path, libdir: str, with_dwarfs: bool, report: Report, dry:
     targets = [m.group(2) for m in TARGET_RE.finditer(text)]
     links = [f"target_link_libraries({t} {link_visibility(text, t)} rwzfs)" for t in targets]
     block = render_block(libdir, with_dwarfs, links, deps)
+    if deps == "vcpkg" and with_dwarfs and not PROJECT_RE.search(text):
+        report.cmake_notes.append("no project() call found: add the vcpkg overlay lines (see docs/VENDORING.md) before the first project() call")
     new = text.rstrip("\n") + "\n\n" + block + "\n"
+    new = place_pre(new, render_pre(libdir) if deps == "vcpkg" and with_dwarfs else None)
     if not targets:
         report.cmake_notes.append("no add_executable/add_library targets found in the top-level CMakeLists.txt: link rwzfs to your targets (target_link_libraries(<t> PRIVATE rwzfs))")
     if re.search(r"set\s*\(\s*CMAKE_CXX_STANDARD\s+(1[17]|20)\b", text):
@@ -428,7 +470,8 @@ def regenerate_block(root: Path, libdir: str, with_dwarfs: bool, deps: str = "vc
     old = text[text.index(BLOCK_BEGIN):text.index(BLOCK_END) + len(BLOCK_END)]
     links = [f"target_link_libraries({m.group(1)} {link_visibility(text, m.group(1), m.group(2))} rwzfs)"
              for m in BLOCK_LINK_RE.finditer(old)]
-    return text.replace(old, render_block(libdir, with_dwarfs, links, deps), 1)
+    new = text.replace(old, render_block(libdir, with_dwarfs, links, deps), 1)
+    return place_pre(new, render_pre(libdir) if deps == "vcpkg" and with_dwarfs else None)
 
 
 def update_block(root: Path, libdir: str, with_dwarfs: bool, deps: str = "vcpkg") -> bool:

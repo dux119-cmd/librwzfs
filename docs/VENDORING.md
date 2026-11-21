@@ -176,3 +176,15 @@ that.
 
 A project that already has its own dwarfs can set `-DRWZFS_DEPS=system` and `-DDWARFS_PREFIX=<prefix>` when it
 configures. `--deps vcpkg|scripts|system` on the vendoring tool chooses the default the generated block sets.
+
+## The vcpkg overlay
+
+vcpkg reads its overlay (the dwarfs port, `vcpkg-ports/`, and the static triplets, `vcpkg-triplets/`) during
+`project()`, so the vendoring tool puts the settings in a block just before the first `project()` call. Keep that
+block where it is. The block appends to `VCPKG_OVERLAY_PORTS` and `VCPKG_OVERLAY_TRIPLETS` rather than replacing them,
+so a project's own overlays still work: set them before the block (or before `project()`), and both sets are used. The tool copies both directories into the vendored library, and updates the block on refresh.
+
+Your configure preset still needs the triplet, for example `VCPKG_TARGET_TRIPLET=x64-linux-static` (or
+`arm64-osx-static`, `x64-windows-static`), and the vcpkg toolchain. A project whose manifest has a
+`builtin-baseline` also needs the port to be found through the overlay: the error "the baseline does not contain an
+entry for port dwarfs" means the overlay was not seen.

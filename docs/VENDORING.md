@@ -185,6 +185,6 @@ block where it is. The block appends to `VCPKG_OVERLAY_PORTS` and `VCPKG_OVERLAY
 so a project's own overlays still work: set them before the block (or before `project()`), and both sets are used. The tool copies both directories into the vendored library, and updates the block on refresh.
 
 Your configure preset still needs the triplet, for example `VCPKG_TARGET_TRIPLET=x64-linux-static` (or
-`arm64-osx-static`, `x64-windows-static`), and the vcpkg toolchain. A project whose manifest has a
+`arm64-osx-static`, `x64-windows-static-rel`), and the vcpkg toolchain. A project whose manifest has a
 `builtin-baseline` also needs the port to be found through the overlay: the error "the baseline does not contain an
 entry for port dwarfs" means the overlay was not seen.

@@ -9,7 +9,7 @@ vcpkg's installed tree, into `build-deps/` beside `build/`.
 The port needs its SHA-512 for the source archive: the placeholder in `vcpkg-ports/dwarfs/portfile.cmake` must be
 replaced with the value vcpkg prints on the first mismatch. Configure with the vcpkg toolchain (set `VCPKG_ROOT`, and the CMake finds
 the toolchain), and use the static triplets in `vcpkg-triplets/` (`x64-linux-static`, `arm64-osx-static`,
-`x64-windows-static`) so the libraries link statically:
+`x64-windows-static-rel`) so the libraries link statically:
 
     export VCPKG_ROOT=/path/to/vcpkg
     cmake -S . -B build -DVCPKG_OVERLAY_TRIPLETS=$PWD/vcpkg-triplets -DVCPKG_OVERLAY_PORTS=$PWD/vcpkg-ports \

@@ -38,7 +38,7 @@ if(RWZFS_DEPS STREQUAL "vcpkg" AND (NOT DEFINED RWZFS_WITH_DWARFS OR RWZFS_WITH_
     elseif(_rwz_host_os STREQUAL "Linux" AND _rwz_host_arch STREQUAL "x86_64")
       set(VCPKG_TARGET_TRIPLET "x64-linux-static")
     elseif(_rwz_host_os STREQUAL "Windows" AND _rwz_host_arch MATCHES "^(x86_64|AMD64)$")
-      set(VCPKG_TARGET_TRIPLET "x64-windows-static")
+      set(VCPKG_TARGET_TRIPLET "x64-windows-static-rel")
     endif()
   endif()
 

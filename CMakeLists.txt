@@ -58,7 +58,10 @@ endif()
 # Needs bash (Git's bash on Windows), git, curl, a C++23 compiler, and a few minutes (hours on one CPU).
 option(RWZFS_USE_MANAGED_DEPS
   "Use rwzfs's own static dependencies (dwarfs and friends), built once into RWZFS_DEPS_DIR. OFF uses system libraries." ON)
-set(RWZFS_DEPS_DIR "${PROJECT_SOURCE_DIR}/build-deps" CACHE PATH
+# The dependency scripts ship inside the library (vendored copies carry them too). The default install
+# location is beside the top-level project's build/, so a vendored library shares its project's deps.
+set(RWZFS_SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/scripts/deps")
+set(RWZFS_DEPS_DIR "${CMAKE_SOURCE_DIR}/build-deps" CACHE PATH
   "Where the managed dependencies are installed. Outside build/, so cleaning build/ keeps them.")
 option(RWZFS_SIZE_OPTIMIZED "Compile rwzfs for size in Release (-Os, per-function sections)" ON)
 
@@ -70,7 +73,7 @@ if(RWZFS_USE_MANAGED_DEPS AND RWZFS_WITH_DWARFS)
   # The recipe: every file in scripts/deps (versions.sh pins every version; the rest is the actions that
   # build them). A change to any of them rebuilds everything, so an installed library can never be older
   # than the recipe that names it.
-  file(GLOB _rwz_recipe_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/scripts/deps/*")
+  file(GLOB _rwz_recipe_files CONFIGURE_DEPENDS "${RWZFS_SCRIPTS_DIR}/*")
   list(SORT _rwz_recipe_files)
   set(_rwz_recipe "")
   foreach(_rwz_f IN LISTS _rwz_recipe_files)
@@ -101,7 +104,7 @@ if(RWZFS_USE_MANAGED_DEPS AND RWZFS_WITH_DWARFS)
               "DEPS_PREFIX=${RWZFS_DEPS_PREFIX}"
               "DEPS_WORK=${RWZFS_DEPS_WORK}"
               "WITH_TESTS=1"
-              "${RWZ_BASH}" "${PROJECT_SOURCE_DIR}/scripts/deps/build-all.sh"
+              "${RWZ_BASH}" "${RWZFS_SCRIPTS_DIR}/build-all.sh"
       COMMAND_ERROR_IS_FATAL ANY)
     file(WRITE "${RWZFS_DEPS_STAMP}" "${_rwz_recipe}")
   endif()

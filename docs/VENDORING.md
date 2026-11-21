@@ -38,7 +38,7 @@ remains. Skipped sites are not offered again in one run.
 | `--branch NAME` | create and switch to a new branch first |
 | `--dry-run` | list the sites and change nothing |
 | `--libdir DIR` | where the library goes (default `src/libs/rwzfs`) |
-| `--with-dwarfs` | link the dwarfs-backed reader (needs dwarfs installed) |
+| `--no-dwarfs` | vendor without the dwarfs archive reader (no managed dependencies are built) |
 | `--library PATH` | the rwzfs source tree to copy (default: the tree this script is in) |
 | `--exclude DIR ...` | extra directories to skip |
 | `--allow-dirty` | run with uncommitted changes |
@@ -65,7 +65,7 @@ for instance) is still replaced, so check the dry run for names that look local.
 1. **Copies the library** (`include/`, `src/`, `CMakeLists.txt`, `LICENSE`) to `<root>/src/libs/rwzfs`
    (change with `--libdir`). An existing copy there is replaced.
 2. **Edits the top-level `CMakeLists.txt`**: appends a block that sets `RWZFS_WITH_DWARFS` (off unless
-   `--with-dwarfs`), turns off the library's tests and examples, adds the library subdirectory, and
+   turns off the library's tests and examples, adds the library subdirectory, and
    adds `target_link_libraries(<target> PRIVATE rwzfs)` for each `add_executable`/`add_library` in that
    file. The block is marked, and it is not added twice.
 3. **Rewrites sources.** Every `.cpp`, `.cc`, `.cxx`, `.hpp`, `.h` (C++ headers) and similar file under
@@ -159,3 +159,15 @@ lines, or any replacement: the code keeps calling `rwz::` names, which the new l
 
 Check the library's API changes against your code before you refresh: a removed or renamed function
 breaks the build, which the refresh does not check.
+
+## The dependencies come with the library
+
+The vendored copy includes `scripts/deps` (the versions and the builders for dwarfs and its stack). The
+generated CMake turns dwarfs on, so configuring the project builds the managed dependencies once into
+`build-deps/` beside `build/`, and every later configure reuses them. The first configure needs bash (Git's
+bash on Windows), git, curl and a C++23 compiler, and takes a long time: the whole stack is built from
+pinned sources. Pass `--no-dwarfs` to vendor the library without the archive reader and without any of
+that.
+
+A project that already has its own dwarfs can set `RWZFS_USE_MANAGED_DEPS=OFF` and `DWARFS_PREFIX` before
+configuring.

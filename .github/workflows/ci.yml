@@ -189,3 +189,30 @@ jobs:
           ASAN_OPTIONS: abort_on_error=1:detect_leaks=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: ctest --test-dir build-sanitize --output-on-failure --parallel
+
+  # The scripts path: dwarfs and its dependencies built from pinned sources (scripts/deps), no vcpkg. The
+  # first run takes hours; build-deps/ is cached, keyed on the scripts, so later runs reuse it.
+  scripts-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 ninja-build pkg-config cmake
+
+      - name: Cache build-deps (scripts)
+        uses: actions/cache@v4
+        with:
+          path: build-deps
+          key: rwz-scripts-deps-${{ hashFiles('scripts/deps/**') }}-p1
+
+      - name: Configure rwzfs (RWZFS_DEPS=scripts)
+        run: cmake -S . -B build -DRWZFS_DEPS=scripts -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure --parallel

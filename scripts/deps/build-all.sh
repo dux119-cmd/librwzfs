@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds every managed dependency, in dependency order, into one prefix (DEPS_PREFIX, default
 # build-deps/ beside build/). Each step is its own script in this directory; versions.sh pins the
-# versions; common.sh holds the shared actions. CMake runs this script when RWZFS_USE_MANAGED_DEPS is ON.
+# versions; common.sh holds the shared actions. CMake runs this script when RWZFS_DEPS=scripts.
 #
 # Environment:
 #   DEPS_PREFIX  install prefix (default: <repo>/build-deps)

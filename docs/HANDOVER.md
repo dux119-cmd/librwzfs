@@ -89,7 +89,7 @@ Nothing is open that is in scope. Accepted behaviour, not work items:
 ## Building and testing
 ```
 cmake -S . -B build                                    # managed dependencies (default)
-cmake -S . -B build -DRWZFS_USE_MANAGED_DEPS=OFF -DDWARFS_PREFIX=/usr/local   # system libraries
+cmake -S . -B build -DRWZFS_DEPS=system -DDWARFS_PREFIX=/usr/local   # libraries already installed
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
@@ -106,7 +106,7 @@ Archive creation needs no `mkdwarfs` binary; dwarfs is built as libraries (`scri
 - `docs/VENDORING.md` and `tools/rwzfs_vendor.py`: vendor the library into a CMake C++ project and switch its IO calls to the wrappers. The report lists what needs a person. Tested on a sample project.
 
 ## Static builds
-- `docs/STATIC_BUILD.md`: `scripts/deps/build-all.sh` (one builder per dependency, versions in `versions.sh`) builds dwarfs and its dependencies as static, size-optimized libraries from pinned tags. CMake runs it at configure time (`RWZFS_USE_MANAGED_DEPS`, on by default). CI builds them on Linux, macOS and Windows.
+- `docs/STATIC_BUILD.md`: `scripts/deps/build-all.sh` (one builder per dependency, versions in `versions.sh`) builds dwarfs and its dependencies as static, size-optimized libraries from pinned tags. CMake runs it at configure time (`RWZFS_DEPS=scripts`). CI builds them on Linux, macOS and Windows.
 
 ## Layout
 - `include/rwzfs/` public headers (`fs/`, `io/`, `archive/`, `mount.h`)

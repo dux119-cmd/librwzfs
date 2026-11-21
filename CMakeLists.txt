@@ -9,15 +9,44 @@ if(RWZFS_USE_CCACHE AND CCACHE_PROGRAM)
   message(STATUS "ccache: ${CCACHE_PROGRAM} (compression level 6)")
 endif()
 
-# ---- vcpkg -----------------------------------------------------------------
-# dwarfs's dependencies come from vcpkg by default (the manifest is vcpkg.json). A standalone build finds
-# vcpkg through VCPKG_ROOT. The toolchain must be set before project(), so this runs first.
-option(RWZFS_USE_VCPKG "Take dwarfs's dependencies from vcpkg (manifest vcpkg.json). OFF uses the managed scripts or the system." ON)
-if(RWZFS_USE_VCPKG AND (NOT DEFINED RWZFS_WITH_DWARFS OR RWZFS_WITH_DWARFS)
-   AND NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
-  set(_rwz_vcpkg_toolchain "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
-  if(EXISTS "${_rwz_vcpkg_toolchain}")
-    set(CMAKE_TOOLCHAIN_FILE "${_rwz_vcpkg_toolchain}")
+# ---- Where dwarfs's dependencies come from -----------------------------------
+# One variable, three values:
+#   vcpkg    (default) the vcpkg toolchain installs the dependencies from vcpkg.json; dwarfs comes from the
+#            overlay port (vcpkg-ports/dwarfs). Found through VCPKG_ROOT or CMAKE_TOOLCHAIN_FILE.
+#   scripts  build dwarfs and its dependencies from pinned sources (scripts/deps), into RWZFS_DEPS_DIR.
+#   system   use libraries already installed on this machine, with DWARFS_PREFIX (default /usr/local).
+# The toolchain must be set before project(), so the vcpkg part of this runs first.
+set(RWZFS_DEPS "vcpkg" CACHE STRING
+  "Dependencies for dwarfs: vcpkg (default, auto-detected), scripts (built from source), or system (installed on this machine).")
+set_property(CACHE RWZFS_DEPS PROPERTY STRINGS vcpkg scripts system)
+
+if(RWZFS_DEPS STREQUAL "vcpkg" AND (NOT DEFINED RWZFS_WITH_DWARFS OR RWZFS_WITH_DWARFS))
+  # The toolchain runs "vcpkg install" during project(), so the overlay port (dwarfs) and the static triplets
+  # must be set here. Values given on the command line win.
+  if(NOT DEFINED VCPKG_OVERLAY_PORTS)
+    set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_LIST_DIR}/vcpkg-ports")
+  endif()
+  if(NOT DEFINED VCPKG_OVERLAY_TRIPLETS)
+    set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_LIST_DIR}/vcpkg-triplets")
+  endif()
+  if(NOT DEFINED VCPKG_TARGET_TRIPLET)
+    # The host is not known before project(), so ask CMake for it directly.
+    cmake_host_system_information(RESULT _rwz_host_os QUERY OS_NAME)
+    cmake_host_system_information(RESULT _rwz_host_arch QUERY OS_PLATFORM)
+    if(_rwz_host_os STREQUAL "Darwin" AND _rwz_host_arch STREQUAL "arm64")
+      set(VCPKG_TARGET_TRIPLET "arm64-osx-static")
+    elseif(_rwz_host_os STREQUAL "Linux" AND _rwz_host_arch STREQUAL "x86_64")
+      set(VCPKG_TARGET_TRIPLET "x64-linux-static")
+    elseif(_rwz_host_os STREQUAL "Windows" AND _rwz_host_arch MATCHES "^(x86_64|AMD64)$")
+      set(VCPKG_TARGET_TRIPLET "x64-windows-static")
+    endif()
+  endif()
+
+  if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+    set(_rwz_vcpkg_toolchain "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+    if(EXISTS "${_rwz_vcpkg_toolchain}")
+      set(CMAKE_TOOLCHAIN_FILE "${_rwz_vcpkg_toolchain}")
+    endif()
   endif()
 endif()
 
@@ -62,14 +91,11 @@ if(RWZFS_SANITIZE)
   message(STATUS "rwzfs: sanitizer build (AddressSanitizer + UndefinedBehaviorSanitizer), tests on")
 endif()
 
-# ---- Managed dependencies ---------------------------------------------------
-# RWZFS_USE_MANAGED_DEPS (default ON) builds dwarfs and its dependencies from pinned sources, as static,
-# size-optimized libraries, once, into RWZFS_DEPS_DIR (default: build-deps/ beside build/). Every build
-# directory (Release, Debug, sanitizer, tests) finds and uses the same libraries. Cleaning build/ keeps
-# them. OFF uses system-provided libraries, with DWARFS_PREFIX (default /usr/local).
-# Needs bash (Git's bash on Windows), git, curl, a C++23 compiler, and a few minutes (hours on one CPU).
-option(RWZFS_USE_MANAGED_DEPS
-  "Use rwzfs's own static dependencies (dwarfs and friends), built once into RWZFS_DEPS_DIR. OFF uses system libraries." ON)
+# ---- Dependency locations ------------------------------------------------------
+# RWZFS_DEPS=scripts builds dwarfs and its dependencies from pinned sources, as static, size-optimized
+# libraries, once, into RWZFS_DEPS_DIR (default: build-deps/ beside build/). Every build directory (Release,
+# Debug, sanitizer, tests) finds and uses the same libraries. Needs bash (Git's bash on Windows), git, curl,
+# a C++23 compiler, and a few minutes (hours on one CPU).
 # The dependency scripts ship inside the library (vendored copies carry them too). The default install
 # location is beside the top-level project's build/, so a vendored library shares its project's deps.
 set(RWZFS_SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/scripts/deps")
@@ -77,20 +103,26 @@ set(RWZFS_DEPS_DIR "${CMAKE_SOURCE_DIR}/build-deps" CACHE PATH
   "Where the managed dependencies are installed. Outside build/, so cleaning build/ keeps them.")
 option(RWZFS_SIZE_OPTIMIZED "Compile rwzfs for size in Release (-Os, per-function sections)" ON)
 
-# Where dwarfs's dependencies come from: the active vcpkg toolchain, the managed scripts, or the system.
-set(RWZFS_DEPS_MODE "system")
-if(RWZFS_WITH_DWARFS)
-  if(RWZFS_USE_VCPKG AND DEFINED VCPKG_TARGET_TRIPLET)
-    set(RWZFS_DEPS_MODE "vcpkg")
-  elseif(RWZFS_USE_VCPKG)
-    message(STATUS "rwzfs: RWZFS_USE_VCPKG is on, but no vcpkg toolchain is active (set VCPKG_ROOT or CMAKE_TOOLCHAIN_FILE)")
-  endif()
-  if(RWZFS_DEPS_MODE STREQUAL "system" AND RWZFS_USE_MANAGED_DEPS)
-    set(RWZFS_DEPS_MODE "managed")
+if(NOT RWZFS_DEPS MATCHES "^(vcpkg|scripts|system)$")
+  message(FATAL_ERROR "rwzfs: RWZFS_DEPS must be vcpkg, scripts or system (got '${RWZFS_DEPS}').")
+endif()
+# Without dwarfs there are no dependencies to locate: no branch below runs.
+set(RWZFS_DEPS_MODE "${RWZFS_DEPS}")
+if(NOT RWZFS_WITH_DWARFS)
+  set(RWZFS_DEPS_MODE "none")
+endif()
+if(RWZFS_WITH_DWARFS AND RWZFS_DEPS_MODE STREQUAL "vcpkg")
+  # The toolchain defines VCPKG_INSTALLED_DIR; the triplet alone is set even without it.
+  if(NOT DEFINED VCPKG_INSTALLED_DIR OR NOT DEFINED VCPKG_TARGET_TRIPLET)
+    message(FATAL_ERROR
+      "rwzfs: RWZFS_DEPS=vcpkg, but no vcpkg toolchain is active (or the host has no static triplet).\n"
+      "  - Set VCPKG_ROOT to your vcpkg clone, or pass -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake\n"
+      "  - To build dwarfs's dependencies from source instead: -DRWZFS_DEPS=scripts\n"
+      "  - To use libraries already installed on this machine: -DRWZFS_DEPS=system")
   endif()
 endif()
 
-if(RWZFS_DEPS_MODE STREQUAL "managed")
+if(RWZFS_DEPS_MODE STREQUAL "scripts")
   set(RWZFS_DEPS_PREFIX "${RWZFS_DEPS_DIR}")
   set(RWZFS_DEPS_WORK "${RWZFS_DEPS_DIR}/work")
   set(RWZFS_DEPS_STAMP "${RWZFS_DEPS_DIR}/.rwz-recipe")
@@ -201,7 +233,7 @@ elseif(RWZFS_DEPS_MODE STREQUAL "vcpkg")
   endif()
 elseif(RWZFS_DEPS_MODE STREQUAL "system")
   set(DWARFS_PREFIX "/usr/local" CACHE PATH "Prefix where dwarfs is installed")
-  message(STATUS "rwzfs: using system-provided dependencies (RWZFS_USE_MANAGED_DEPS=OFF)")
+  message(STATUS "rwzfs: using system-provided dependencies (RWZFS_DEPS=system)")
 endif()
 
 set(RWZFS_PCH_HEADERS

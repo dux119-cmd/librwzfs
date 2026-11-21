@@ -20,7 +20,7 @@ Git is required. Start from a clean tree (or pass --allow-dirty), ideally on a n
 remaining sites.
 
 usage:
-  rwzfs_vendor.py <project-root> [--libdir src/libs/rwzfs] [--no-dwarfs] [--library PATH]
+  rwzfs_vendor.py <project-root> [--libdir src/libs/rwzfs] [--deps vcpkg|scripts|system] [--no-dwarfs] [--library PATH]
                   [--exclude DIR ...] [--branch NAME] [--allow-dirty] [--dry-run]
 
 Stdlib only. Python 3.9+.
@@ -28,6 +28,7 @@ Stdlib only. Python 3.9+.
 from __future__ import annotations
 
 import argparse
+import os
 import hashlib
 import re
 import shutil
@@ -345,29 +346,40 @@ def uses_vcpkg(root: Path) -> bool:
     return (root / "vcpkg.json").is_file()
 
 
-def render_block(libdir: str, with_dwarfs: bool, links: list[str], vcpkg: bool = False) -> str:
-    """The generated block. FORCE on the dwarfs setting: an old cached value must not override the project's
-    choice, which is this block. With dwarfs on, configuring builds the managed dependencies once into
-    build-deps/, beside build/."""
+DEPS_CHOICES = ("vcpkg", "scripts", "system")
+
+
+def resolve_deps(root: Path, requested: str | None) -> str:
+    """The dependency source for the project's block: the one requested, else vcpkg when the project has a
+    vcpkg.json or VCPKG_ROOT is set, else the managed scripts."""
+    if requested:
+        return requested
+    if uses_vcpkg(root) or os.environ.get("VCPKG_ROOT"):
+        return "vcpkg"
+    return "scripts"
+
+
+def render_block(libdir: str, with_dwarfs: bool, links: list[str], deps: str) -> str:
+    """The generated block. RWZFS_WITH_DWARFS is forced (the project's choice); RWZFS_DEPS is a default that a
+    -DRWZFS_DEPS=... on the command line overrides (no FORCE on it)."""
     dwarfs = "ON" if with_dwarfs else "OFF"
     lines = [
         BLOCK_BEGIN,
         f'set(RWZFS_WITH_DWARFS {dwarfs} CACHE BOOL "Build the dwarfs-backed archive reader" FORCE)',
         'set(RWZFS_BUILD_TESTS OFF CACHE BOOL "" FORCE)',
         'set(RWZFS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)',
+        f'set(RWZFS_DEPS "{deps}" CACHE STRING "Dependencies for dwarfs: vcpkg, scripts or system")',
     ]
-    if vcpkg and with_dwarfs:
+    if deps == "vcpkg" and with_dwarfs:
         lines += [
-            "# This project has vcpkg.json: vcpkg installs dwarfs's dependencies (the managed scripts are not used).",
-            "# Configure with the vcpkg toolchain: -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake",
-            "# and, for the static triplets and the dwarfs port this library needs:",
-            "#   -DVCPKG_OVERLAY_TRIPLETS=<libdir>/vcpkg-triplets -DVCPKG_OVERLAY_PORTS=<libdir>/vcpkg-ports",
-            "# -DVCPKG_TARGET_TRIPLET=x64-linux-static (or arm64-osx-static, x64-windows-static).",
-            'set(RWZFS_USE_MANAGED_DEPS OFF CACHE BOOL "Use the managed dependency scripts" FORCE)',
+            "# vcpkg (the default) installs dwarfs's dependencies. Configure with the vcpkg toolchain:",
+            "#   -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake   (or set VCPKG_ROOT)",
+            "# To build them from source instead:  -DRWZFS_DEPS=scripts",
+            "# To use libraries already installed:  -DRWZFS_DEPS=system",
         ]
     lines += [
         f"add_subdirectory({libdir})",
-        "# The first configure of a managed build builds the dependencies: needs bash, git, curl and a C++23",
+        "# The first configure of a scripts build builds the dependencies: needs bash, git, curl and a C++23",
         "# compiler, and takes a long time. Later configures reuse build-deps/.",
     ]
     lines += links
@@ -386,7 +398,7 @@ def link_visibility(text: str, target: str, current: str = "PRIVATE") -> str:
     return current
 
 
-def patch_cmake(root: Path, libdir: str, with_dwarfs: bool, report: Report, dry: bool) -> str:
+def patch_cmake(root: Path, libdir: str, with_dwarfs: bool, report: Report, dry: bool, deps: str = "vcpkg") -> str:
     """Adds the vendored library to the project (the first vendoring)."""
     cml = root / "CMakeLists.txt"
     text = cml.read_text(encoding="utf-8")
@@ -395,7 +407,7 @@ def patch_cmake(root: Path, libdir: str, with_dwarfs: bool, report: Report, dry:
         return text
     targets = [m.group(2) for m in TARGET_RE.finditer(text)]
     links = [f"target_link_libraries({t} {link_visibility(text, t)} rwzfs)" for t in targets]
-    block = render_block(libdir, with_dwarfs, links, vcpkg=uses_vcpkg(root))
+    block = render_block(libdir, with_dwarfs, links, deps)
     new = text.rstrip("\n") + "\n\n" + block + "\n"
     if not targets:
         report.cmake_notes.append("no add_executable/add_library targets found in the top-level CMakeLists.txt: link rwzfs to your targets (target_link_libraries(<t> PRIVATE rwzfs))")
@@ -406,7 +418,7 @@ def patch_cmake(root: Path, libdir: str, with_dwarfs: bool, report: Report, dry:
     return new
 
 
-def regenerate_block(root: Path, libdir: str, with_dwarfs: bool) -> str:
+def regenerate_block(root: Path, libdir: str, with_dwarfs: bool, deps: str = "vcpkg") -> str:
     """The block as it should be now, keeping the project's target_link_libraries lines. Returns the new
     file text, or "" when the project has no block to update."""
     cml = root / "CMakeLists.txt"
@@ -416,13 +428,13 @@ def regenerate_block(root: Path, libdir: str, with_dwarfs: bool) -> str:
     old = text[text.index(BLOCK_BEGIN):text.index(BLOCK_END) + len(BLOCK_END)]
     links = [f"target_link_libraries({m.group(1)} {link_visibility(text, m.group(1), m.group(2))} rwzfs)"
              for m in BLOCK_LINK_RE.finditer(old)]
-    return text.replace(old, render_block(libdir, with_dwarfs, links, vcpkg=uses_vcpkg(root)), 1)
+    return text.replace(old, render_block(libdir, with_dwarfs, links, deps), 1)
 
 
-def update_block(root: Path, libdir: str, with_dwarfs: bool) -> bool:
+def update_block(root: Path, libdir: str, with_dwarfs: bool, deps: str = "vcpkg") -> bool:
     """Brings the project's generated block in line with the library (dwarfs setting, comments) as one commit.
     Asks first. Returns True when a commit was made."""
-    new = regenerate_block(root, libdir, with_dwarfs)
+    new = regenerate_block(root, libdir, with_dwarfs, deps)
     if not new:
         print("no generated rwzfs block found in the top-level CMakeLists.txt; nothing to update.")
         return False
@@ -836,7 +848,8 @@ def revert_path(root: Path, libdir: str) -> None:
     git(root, "clean", "-fdq", "--", libdir)
 
 
-def refresh_library(root: Path, libdir: str, lib: Path, allow_dirty: bool, with_dwarfs: bool = True) -> int:
+def refresh_library(root: Path, libdir: str, lib: Path, allow_dirty: bool, with_dwarfs: bool = True,
+                    deps: str = "vcpkg") -> int:
     """Replaces the vendored copy with the current library, as one commit. Nothing else changes.
 
     The up-to-date test compares the files in the copy, not the stamp: a stamp is only text, and the
@@ -851,7 +864,7 @@ def refresh_library(root: Path, libdir: str, lib: Path, allow_dirty: bool, with_
         if merge_vcpkg(root, lib):
             commit(root, ["vcpkg.json"], "vendor(rwzfs): add the library's dependencies to vcpkg.json",
                    "Generated by tools/rwzfs_vendor.py --refresh: dependencies the library now needs.\n")
-        update_block(root, libdir, with_dwarfs)  # the library can be current while the block is stale
+        update_block(root, libdir, with_dwarfs, deps)  # the library can be current while the block is stale
         return 0
     if git(root, "status", "--porcelain", "--", libdir).stdout.strip() and not allow_dirty:
         sys.exit(f"error: {libdir} has uncommitted changes. Commit or revert them, or pass --allow-dirty.")
@@ -867,7 +880,7 @@ def refresh_library(root: Path, libdir: str, lib: Path, allow_dirty: bool, with_
         stat = git(root, "diff", "--cached", "--stat").stdout.strip()
         if not stat:
             print("no change in the copy; nothing to commit.")
-            update_block(root, libdir, with_dwarfs)
+            update_block(root, libdir, with_dwarfs, deps)
             return 0
         print(stat)
         if pick_key("commit this library update? [y]es / [n]o (discard)") != "y":
@@ -878,7 +891,7 @@ def refresh_library(root: Path, libdir: str, lib: Path, allow_dirty: bool, with_
                 f"Library:  {new_id}" + (f"\nRevision: {rev}" if rev else "") + "\n\n" + stat + "\n")
         committed = commit(root, [libdir] + (["vcpkg.json"] if manifest else []),
                            f"vendor(rwzfs): update the vendored library to {new_id}", body)
-        update_block(root, libdir, with_dwarfs)
+        update_block(root, libdir, with_dwarfs, deps)
         return 0
     finally:
         if not committed:
@@ -890,6 +903,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("project_root", type=Path)
     ap.add_argument("--libdir", default="src/libs/rwzfs")
     ap.add_argument("--library", type=Path, default=Path(__file__).resolve().parent.parent)
+    ap.add_argument("--deps", choices=DEPS_CHOICES, default=None,
+                    help="dependency source the project's default uses: vcpkg (default if found), scripts, or system")
     ap.add_argument("--no-dwarfs", action="store_true",
                     help="vendor without the dwarfs archive reader (no managed dependencies)")
     ap.add_argument("--exclude", nargs="*", default=[])
@@ -908,7 +923,8 @@ def main(argv: list[str]) -> int:
         sys.exit(f"error: {lib} does not look like the rwzfs source tree")
     require_git(root)
     if args.refresh:
-        return refresh_library(root, args.libdir, lib, args.allow_dirty, with_dwarfs=not args.no_dwarfs)
+        return refresh_library(root, args.libdir, lib, args.allow_dirty, with_dwarfs=not args.no_dwarfs,
+                               deps=resolve_deps(root, args.deps))
     excludes = DEFAULT_EXCLUDES | set(args.exclude)
 
     replace_sites, silent = scan_project(root, args.libdir, excludes, "replace")
@@ -935,7 +951,7 @@ def main(argv: list[str]) -> int:
             return 0
         copy_library(lib, root / args.libdir, False)
         write_stamp(root / args.libdir, lib)
-        patch_cmake(root, args.libdir, not args.no_dwarfs, Report(), False)
+        patch_cmake(root, args.libdir, not args.no_dwarfs, Report(), False, resolve_deps(root, args.deps))
         manifest = merge_vcpkg(root, lib)
         commit(root, [args.libdir, "CMakeLists.txt"] + (["vcpkg.json"] if manifest else []),
                f"vendor(rwzfs): add the library at {args.libdir} and link it",

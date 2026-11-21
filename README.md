@@ -75,7 +75,7 @@ tool (below), without changing how it handles errors.
 - **Managed dependencies.** The build fetches and builds dwarfs and its dependencies from pinned versions
   (`scripts/deps/versions.sh`), with SHA-256 checks on the release archives. They go into `build-deps/`,
   beside `build/`, so every build (release, debug, sanitizer) shares them, and cleaning `build/` keeps them.
-  Set `RWZFS_USE_MANAGED_DEPS=OFF` to use system libraries instead.
+  Use `-DRWZFS_DEPS=scripts` or `-DRWZFS_DEPS=system` instead (see below).
 - **Sanitizer builds.** `cmake --preset sanitize` builds with AddressSanitizer and UndefinedBehaviorSanitizer
   and runs the test suite under them.
 
@@ -111,6 +111,28 @@ no copy.
 
 `rwz-tool` opens an archive with its overlay (`open`), writes a revised archive from the changes in an
 overlay (`revise`), and creates an archive from a game directory (`create`). See `docs/USAGE.md`.
+
+## Choosing the dependencies
+
+One variable, `RWZFS_DEPS`, picks where dwarfs and its libraries come from:
+
+| value | what it does | when to use it |
+|---|---|---|
+| `vcpkg` (default) | vcpkg installs the libraries from `vcpkg.json`; dwarfs is built from the overlay port | You have vcpkg. It is found through `VCPKG_ROOT`. |
+| `scripts` | `scripts/deps` builds dwarfs and its libraries from pinned sources, into `build-deps/` | No vcpkg, or you prefer not to use it. |
+| `system` | Uses libraries already installed, with dwarfs at `DWARFS_PREFIX` | Your platform packages everything, or you have a dwarfs install. |
+
+    # vcpkg (default): set VCPKG_ROOT once, then configure
+    export VCPKG_ROOT=/path/to/vcpkg
+    cmake -S . -B build
+
+    # scripts: no vcpkg needed (bash, git, curl and a C++23 compiler)
+    cmake -S . -B build -DRWZFS_DEPS=scripts
+
+    # system: point at the installed dwarfs
+    cmake -S . -B build -DRWZFS_DEPS=system -DDWARFS_PREFIX=/usr/local
+
+If vcpkg is the choice but can't be found, configuration stops and names both alternatives.
 
 ## Building
 

@@ -3,6 +3,9 @@
 #
 # SHA512: vcpkg prints the correct value when it first downloads the archive with a mismatch. Replace the
 # placeholder with that value before using the port (upstream acceptance needs the real hash).
+# Release only, as the rest of rwzfs's dependency build: skips the debug build instead of deleting it.
+set(VCPKG_BUILD_TYPE release)
+
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO mhx/dwarfs
@@ -25,10 +28,23 @@ if(VCPKG_TARGET_IS_OSX)
         LOGNAME patch-apple)
 endif()
 
+# dwarfs fetches parallel-hashmap with FetchContent unless it finds it by compiling a probe against
+# TRY_RUN_INCLUDE_DIRECTORIES, and vcpkg disables FetchContent downloads. Point the probe, and the
+# `phmap` target, at the header-only parallel-hashmap port instead.
+vcpkg_replace_string("${SOURCE_PATH}/cmake/need_phmap.cmake"
+    "CMAKE_FLAGS -DINCLUDE_DIRECTORIES=\${TRY_RUN_INCLUDE_DIRECTORIES}"
+    "CMAKE_FLAGS -DINCLUDE_DIRECTORIES=\${RWZ_PHMAP_INCLUDE_DIR}")
+vcpkg_replace_string("${SOURCE_PATH}/cmake/need_phmap.cmake"
+    "  add_library(phmap INTERFACE)\n"
+    "  add_library(phmap INTERFACE)\n  target_include_directories(phmap INTERFACE \"\${RWZ_PHMAP_INCLUDE_DIR}\")\n")
+
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
         ${FEATURE_OPTIONS}
+        # The release tarball ships generated version files; the GitHub tag archive does not.
+        -DNIXPKGS_DWARFS_VERSION_OVERRIDE=v${VERSION}
+        -DRWZ_PHMAP_INCLUDE_DIR=${CURRENT_INSTALLED_DIR}/include
         -DWITH_LIBDWARFS=ON
         -DWITH_TESTS=OFF
         -DWITH_BENCHMARKS=OFF
@@ -61,10 +77,6 @@ vcpkg_cmake_install()
 if(EXISTS "${CURRENT_PACKAGES_DIR}/lib/cmake/dwarfs")
     vcpkg_cmake_config_fixup(PACKAGE_NAME dwarfs CONFIG_PATH lib/cmake/dwarfs)
 endif()
-
-# Release only, as the rest of rwzfs's dependency build.
-file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug")
-file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")
 
 if(EXISTS "${SOURCE_PATH}/LICENSE")
     file(INSTALL "${SOURCE_PATH}/LICENSE" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME copyright)

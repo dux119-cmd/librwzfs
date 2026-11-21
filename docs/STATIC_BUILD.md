@@ -1,4 +1,4 @@
-# Dependencies: vcpkg by default, or the managed scripts
+# Dependencies: vcpkg, scripts, or system
 
 dwarfs's dependencies come from vcpkg by default. The library's `vcpkg.json` lists `dwarfs`; the overlay port in
 `vcpkg-ports/dwarfs` declares dwarfs's own dependencies (boost, fmt, zstd, libarchive, openssl, and the rest), and vcpkg
@@ -15,14 +15,14 @@ the toolchain), and use the static triplets in `vcpkg-triplets/` (`x64-linux-sta
     cmake -S . -B build -DVCPKG_OVERLAY_TRIPLETS=$PWD/vcpkg-triplets -DVCPKG_OVERLAY_PORTS=$PWD/vcpkg-ports \
           -DVCPKG_TARGET_TRIPLET=x64-linux-static
 
-Without vcpkg (or with `-DRWZFS_USE_VCPKG=OFF`), the managed path builds everything from pinned sources, as before.
+Without vcpkg, or with `-DRWZFS_DEPS=scripts`, the scripts build everything from pinned sources. With
+`-DRWZFS_DEPS=system`, the libraries already installed on the machine are used.
 The rest of this page describes that managed path.
 
 ## The managed path
 
 rwzfs builds dwarfs and its dependencies from pinned sources, as static, size-optimized libraries, into
-one prefix: `build-deps/`, beside `build/`. This is used when vcpkg is off (`RWZFS_USE_VCPKG=OFF`, or no vcpkg
-toolchain) and `RWZFS_USE_MANAGED_DEPS=ON`.
+one prefix: `build-deps/`, beside `build/`. This is `RWZFS_DEPS=scripts`.
 
 Because the prefix sits outside `build/`, every build directory shares it (Release, Debug, sanitizer,
 tests), and cleaning `build/` keeps it. The libraries are built once.
@@ -53,7 +53,7 @@ The FUSE mount binary is not built (it needs FUSE).
 ## Use
 
     cmake -S . -B build                          # vcpkg if VCPKG_ROOT is set; otherwise the managed scripts
-    cmake -S . -B build -DRWZFS_USE_MANAGED_DEPS=OFF -DDWARFS_PREFIX=/usr/local   # system libraries
+    cmake -S . -B build -DRWZFS_DEPS=system -DDWARFS_PREFIX=/usr/local   # libraries already installed
 
 To build the dependencies by hand, without CMake:
 

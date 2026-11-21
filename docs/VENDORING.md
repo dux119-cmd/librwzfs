@@ -174,5 +174,5 @@ bash on Windows), git, curl and a C++23 compiler, and takes a long time: the who
 pinned sources. Pass `--no-dwarfs` to vendor the library without the archive reader and without any of
 that.
 
-A project that already has its own dwarfs can set `RWZFS_USE_MANAGED_DEPS=OFF` and `DWARFS_PREFIX` before
-configuring.
+A project that already has its own dwarfs can set `-DRWZFS_DEPS=system` and `-DDWARFS_PREFIX=<prefix>` when it
+configures. `--deps vcpkg|scripts|system` on the vendoring tool chooses the default the generated block sets.

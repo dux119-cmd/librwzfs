@@ -1,0 +1,147 @@
+name: vcpkg
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: vcpkg-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Dependencies from vcpkg (vcpkg.json), dwarfs from the overlay port, full tests and the showcase. The vcpkg
+  # binary cache and the installed tree are cached per platform. The cache is saved even when the build fails,
+  # so packages compiled so far are kept, and the restore falls back to the newest cache for the platform.
+  vcpkg:
+    name: vcpkg (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            os: ubuntu-latest
+            triplet: x64-linux-static
+            cache_paths: "vcpkg_installed\n~/.cache/vcpkg/archives\nbuild-deps"
+          - name: macos
+            os: macos-15
+            triplet: arm64-osx-static
+            cache_paths: "vcpkg_installed\n~/.cache/vcpkg/archives\nbuild-deps"
+          - name: windows
+            os: windows-2022
+            triplet: x64-windows-static-rel
+            cache_paths: "vcpkg_installed\n~/AppData/Local/vcpkg/archives\nbuild-deps"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools (Linux)
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 ninja-build pkg-config cmake
+
+      - name: Select Xcode and install tools (macOS)
+        if: matrix.name == 'macos'
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$xcode" ]; then
+            echo "No Xcode installed. Installed:"; ls -d /Applications/Xcode*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$xcode"
+          xcode-select -p
+          clang++ --version
+          brew install ninja pkg-config cmake
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: matrix.name == 'windows'
+
+      - name: Install build tools (Windows)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          choco install -y ninja pkgconfiglite strawberryperl
+          # OpenSSL's Configure needs a complete perl: Strawberry Perl first on PATH (not its gcc).
+          echo "C:\Strawberry\perl\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Set up vcpkg (Linux and macOS)
+        if: matrix.name != 'windows'
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+
+      - name: Set up vcpkg (Windows)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP\vcpkg"
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Restore vcpkg and dwarfs cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ matrix.cache_paths }}
+          key: rwz-vcpkg-${{ matrix.name }}-${{ hashFiles('vcpkg.json', 'vcpkg-triplets/*', 'vcpkg-ports/**', 'scripts/deps/**') }}-p3
+          restore-keys: |
+            rwz-vcpkg-${{ matrix.name }}-
+
+      # Linux and macOS: the environment's VCPKG_ROOT is found by the CMake toolchain logic.
+      - name: Configure rwzfs (Linux and macOS)
+        if: matrix.name != 'windows'
+        shell: bash
+        env:
+          VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/vcpkg-triplets
+          VCPKG_OVERLAY_PORTS: ${{ github.workspace }}/vcpkg-ports
+          VCPKG_DEFAULT_TRIPLET: ${{ matrix.triplet }}
+        run: cmake -S . -B build -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed"
+
+      # Windows: static CRT and static libraries, matching rwzfs's MultiThreaded runtime. CMake wants forward
+      # slashes; the workspace path from the shell has backslashes on Windows, so it is converted.
+      - name: Configure rwzfs (Windows)
+        if: matrix.name == 'windows'
+        shell: bash
+        env:
+          VCPKG_DEFAULT_TRIPLET: ${{ matrix.triplet }}
+        run: |
+          ws=$(cygpath -m "$PWD")
+          cmake -S . -B build -DRWZFS_WITH_DWARFS=ON \
+            -DVCPKG_INSTALLED_DIR="$ws/vcpkg_installed" \
+            -DVCPKG_OVERLAY_TRIPLETS="$ws/vcpkg-triplets" \
+            -DVCPKG_OVERLAY_PORTS="$ws/vcpkg-ports"
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        shell: bash
+        run: ctest --test-dir build -C Release --output-on-failure --parallel -E rwzfs_example
+
+      - name: Showcase (host tree, mounted archive, writes, revision)
+        shell: bash
+        run: ctest --test-dir build -C Release --output-on-failure -R rwzfs_example
+
+      - name: Backtrace of the creator test's throws (Linux, on failure)
+        if: failure() && matrix.name == 'linux'
+        # Stops at each C++ throw in the creator test and prints the top frames, then the frames that mention
+        # "optional" (the bad_optional_access source) are shown in full.
+        run: |
+          sudo apt-get install -y gdb
+          cmd=(gdb -batch -ex 'set pagination off' -ex 'catch throw' -ex run)
+          for i in $(seq 40); do cmd+=(-ex 'bt 15' -ex continue); done
+          cmd+=(--args build/rwzfs_tests --gtest_filter='CreateView.*')
+          "${cmd[@]}" > gdb.log 2>&1 || true
+          grep -n -i "optional" gdb.log | head -n 40 || true
+          echo "---- first 15 throws (top frames) ----"
+          grep -n "^#" gdb.log | head -n 300 || true
+
+      - name: Save vcpkg and dwarfs cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ matrix.cache_paths }}
+          key: rwz-vcpkg-${{ matrix.name }}-${{ hashFiles('vcpkg.json', 'vcpkg-triplets/*', 'vcpkg-ports/**', 'scripts/deps/**') }}-p3-${{ github.run_id }}

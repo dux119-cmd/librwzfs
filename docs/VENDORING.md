@@ -153,6 +153,11 @@ lines, or any replacement: the code keeps calling `rwz::` names, which the new l
   themselves, so a stamp cannot claim a state the files do not have.
 - It refuses to run over uncommitted changes in the vendored directory (`--allow-dirty` overrides this,
   and the commit then includes them, so use it deliberately).
+- The generated `rwzfs` block in your top-level `CMakeLists.txt` is refreshed too, as its own commit. It keeps
+  your `target_link_libraries(... rwzfs)` lines (an `add_library(<name> INTERFACE)` target links
+  `INTERFACE`, which CMake requires) and rewrites the rest to match the library (dwarfs on by
+  default; pass `--no-dwarfs` to keep it off). The dwarfs setting uses `FORCE`, so an old cached `OFF` cannot
+  override the block. If you edited the block by hand, the refresh shows the change and asks first.
 - Declining the prompt, or any error after the copy, restores the directory to the last commit.
 - Projects vendored before this option have no stamp; the first refresh treats them as unknown and
   replaces the copy if it differs.

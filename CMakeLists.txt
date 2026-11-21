@@ -43,7 +43,9 @@ if(RWZFS_DEPS STREQUAL "vcpkg" AND (NOT DEFINED RWZFS_WITH_DWARFS OR RWZFS_WITH_
   endif()
 
   if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
-    set(_rwz_vcpkg_toolchain "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+    # Windows environment paths use backslashes, which CMake reads as escapes when it embeds the path: convert.
+    file(TO_CMAKE_PATH "$ENV{VCPKG_ROOT}" _rwz_vcpkg_root)
+    set(_rwz_vcpkg_toolchain "${_rwz_vcpkg_root}/scripts/buildsystems/vcpkg.cmake")
     if(EXISTS "${_rwz_vcpkg_toolchain}")
       set(CMAKE_TOOLCHAIN_FILE "${_rwz_vcpkg_toolchain}")
     endif()

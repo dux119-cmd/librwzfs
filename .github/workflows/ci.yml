@@ -169,10 +169,14 @@ jobs:
       # Static CRT and static libraries (x64-windows-static), matching rwzfs's MultiThreaded runtime.
       - name: Configure rwzfs (windows)
         env:
-          VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/vcpkg-triplets
-          VCPKG_OVERLAY_PORTS: ${{ github.workspace }}/vcpkg-ports
           VCPKG_DEFAULT_TRIPLET: x64-windows-static-rel
-        run: cmake -S . -B build -DRWZFS_WITH_DWARFS=ON -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed
+        run: |
+          # CMake wants forward slashes; the workspace path from the shell has backslashes on Windows.
+          ws=$(cygpath -m "$PWD")
+          cmake -S . -B build -DRWZFS_WITH_DWARFS=ON \
+            -DVCPKG_INSTALLED_DIR="$ws/vcpkg_installed" \
+            -DVCPKG_OVERLAY_TRIPLETS="$ws/vcpkg-triplets" \
+            -DVCPKG_OVERLAY_PORTS="$ws/vcpkg-ports"
 
       - name: Build rwzfs (windows)
         run: cmake --build build --config Release --parallel

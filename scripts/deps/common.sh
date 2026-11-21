@@ -31,6 +31,8 @@ IS_DARWIN=0
 
 # Windows (Git Bash or MSYS): CMake needs mixed Windows paths.
 to_native() {
+  # An empty path stays empty (cygpath rejects it), e.g. for an optional prefix that is not set.
+  [[ -z "$1" ]] && return 0
   if [[ $IS_WINDOWS == 1 ]] && command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
 }
 

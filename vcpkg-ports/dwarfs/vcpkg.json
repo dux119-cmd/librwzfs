@@ -1,0 +1,52 @@
+{
+  "name": "dwarfs",
+  "version": "0.15.5",
+  "port-version": 0,
+  "description": "Compressed, read-only, deduplicating archive file system (libdwarfs and its command-line tools).",
+  "homepage": "https://github.com/mhx/dwarfs",
+  "license": "GPL-3.0-only",
+  "dependencies": [
+    "boost-asio",
+    "boost-chrono",
+    "boost-context",
+    "boost-crc",
+    "boost-filesystem",
+    "boost-iostreams",
+    "boost-multi-index",
+    "boost-process",
+    "boost-program-options",
+    "boost-thread",
+    "boost-variant",
+    "brotli",
+    "date",
+    "double-conversion",
+    "fmt",
+    "glog",
+    "libarchive",
+    "libevent",
+    "libflac",
+    "openssl",
+    "pkgconf",
+    "range-v3",
+    "utfcpp",
+    "xxhash",
+    "zstd",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ],
+  "features": {
+    "tools": {
+      "description": "mkdwarfs, dwarfsck and dwarfsextract",
+      "dependencies": []
+    }
+  },
+  "default-features": [
+    "tools"
+  ]
+}

@@ -9,6 +9,18 @@ if(RWZFS_USE_CCACHE AND CCACHE_PROGRAM)
   message(STATUS "ccache: ${CCACHE_PROGRAM} (compression level 6)")
 endif()
 
+# ---- vcpkg -----------------------------------------------------------------
+# dwarfs's dependencies come from vcpkg by default (the manifest is vcpkg.json). A standalone build finds
+# vcpkg through VCPKG_ROOT. The toolchain must be set before project(), so this runs first.
+option(RWZFS_USE_VCPKG "Take dwarfs's dependencies from vcpkg (manifest vcpkg.json). OFF uses the managed scripts or the system." ON)
+if(RWZFS_USE_VCPKG AND (NOT DEFINED RWZFS_WITH_DWARFS OR RWZFS_WITH_DWARFS)
+   AND NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+  set(_rwz_vcpkg_toolchain "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+  if(EXISTS "${_rwz_vcpkg_toolchain}")
+    set(CMAKE_TOOLCHAIN_FILE "${_rwz_vcpkg_toolchain}")
+  endif()
+endif()
+
 project(rwzfs LANGUAGES CXX)
 
 # Defaults for a top-level build. A parent project that adds rwzfs as a subdirectory keeps its own.
@@ -65,7 +77,20 @@ set(RWZFS_DEPS_DIR "${CMAKE_SOURCE_DIR}/build-deps" CACHE PATH
   "Where the managed dependencies are installed. Outside build/, so cleaning build/ keeps them.")
 option(RWZFS_SIZE_OPTIMIZED "Compile rwzfs for size in Release (-Os, per-function sections)" ON)
 
-if(RWZFS_USE_MANAGED_DEPS AND RWZFS_WITH_DWARFS)
+# Where dwarfs's dependencies come from: the active vcpkg toolchain, the managed scripts, or the system.
+set(RWZFS_DEPS_MODE "system")
+if(RWZFS_WITH_DWARFS)
+  if(RWZFS_USE_VCPKG AND DEFINED VCPKG_TARGET_TRIPLET)
+    set(RWZFS_DEPS_MODE "vcpkg")
+  elseif(RWZFS_USE_VCPKG)
+    message(STATUS "rwzfs: RWZFS_USE_VCPKG is on, but no vcpkg toolchain is active (set VCPKG_ROOT or CMAKE_TOOLCHAIN_FILE)")
+  endif()
+  if(RWZFS_DEPS_MODE STREQUAL "system" AND RWZFS_USE_MANAGED_DEPS)
+    set(RWZFS_DEPS_MODE "managed")
+  endif()
+endif()
+
+if(RWZFS_DEPS_MODE STREQUAL "managed")
   set(RWZFS_DEPS_PREFIX "${RWZFS_DEPS_DIR}")
   set(RWZFS_DEPS_WORK "${RWZFS_DEPS_DIR}/work")
   set(RWZFS_DEPS_STAMP "${RWZFS_DEPS_DIR}/.rwz-recipe")
@@ -120,7 +145,61 @@ if(RWZFS_USE_MANAGED_DEPS AND RWZFS_WITH_DWARFS)
     set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
   endif()
   message(STATUS "rwzfs: using the managed dependencies in ${RWZFS_DEPS_PREFIX}")
-elseif(RWZFS_WITH_DWARFS)
+elseif(RWZFS_DEPS_MODE STREQUAL "vcpkg")
+  # vcpkg supplies dwarfs's dependencies. dwarfs itself comes from the overlay port (vcpkg-ports/dwarfs) when
+  # that is in the manifest; otherwise it is built from script against the vcpkg prefix, into RWZFS_DEPS_DIR.
+  set(RWZFS_VCPKG_PREFIX "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+  set(RWZFS_DEPS_PREFIX "${RWZFS_DEPS_DIR}")
+  set(RWZFS_DEPS_WORK "${RWZFS_DEPS_DIR}/work")
+  set(RWZFS_DEPS_STAMP "${RWZFS_DEPS_DIR}/.rwz-recipe-vcpkg")
+  if(EXISTS "${RWZFS_VCPKG_PREFIX}/include/dwarfs/writer/filesystem_writer.h")
+    # The port installed dwarfs: nothing is built from script.
+    set(DWARFS_PREFIX "${RWZFS_VCPKG_PREFIX}" CACHE PATH "Prefix where dwarfs is installed" FORCE)
+    list(PREPEND CMAKE_PREFIX_PATH "${RWZFS_VCPKG_PREFIX}")
+    set(ENV{PKG_CONFIG_LIBDIR} "${RWZFS_VCPKG_PREFIX}/lib/pkgconfig:${RWZFS_VCPKG_PREFIX}/share/pkgconfig")
+    message(STATUS "rwzfs: dwarfs comes from the vcpkg port (${RWZFS_VCPKG_PREFIX})")
+  else()
+    file(SHA256 "${RWZFS_SCRIPTS_DIR}/dwarfs.sh" _rwz_h1)
+    file(SHA256 "${RWZFS_SCRIPTS_DIR}/common.sh" _rwz_h2)
+    file(SHA256 "${RWZFS_SCRIPTS_DIR}/versions.sh" _rwz_h3)
+    file(SHA256 "${RWZFS_SCRIPTS_DIR}/patch-dwarfs-apple.py" _rwz_h4)
+    set(_rwz_recipe "${_rwz_h1} ${_rwz_h2} ${_rwz_h3} ${_rwz_h4} ${RWZFS_VCPKG_PREFIX}")
+    # vcpkg's status file lists every installed package and version: a change there rebuilds dwarfs.
+    if(EXISTS "${VCPKG_INSTALLED_DIR}/vcpkg/status")
+      file(SHA256 "${VCPKG_INSTALLED_DIR}/vcpkg/status" _rwz_h5)
+      string(APPEND _rwz_recipe " ${_rwz_h5}")
+    endif()
+    set(_rwz_installed "")
+    if(EXISTS "${RWZFS_DEPS_STAMP}")
+      file(READ "${RWZFS_DEPS_STAMP}" _rwz_installed)
+    endif()
+    if(NOT _rwz_installed STREQUAL _rwz_recipe)
+      message(STATUS "rwzfs: building dwarfs from script against vcpkg (${RWZFS_VCPKG_PREFIX}) into ${RWZFS_DEPS_DIR}")
+      if(WIN32)
+        find_program(RWZ_BASH NAMES bash
+          PATHS "$ENV{ProgramFiles}/Git/bin" "$ENV{ProgramW6432}/Git/bin" NO_DEFAULT_PATH)
+      endif()
+      find_program(RWZ_BASH NAMES bash REQUIRED)
+      file(MAKE_DIRECTORY "${RWZFS_DEPS_DIR}")
+      file(REMOVE "${RWZFS_DEPS_DIR}/.stamps/dwarfs")
+      execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env
+                "DEPS_PREFIX=${RWZFS_DEPS_PREFIX}"
+                "DWARFS_PREFIX=${RWZFS_DEPS_PREFIX}"
+                "DEPS_EXTERNAL_PREFIX=${RWZFS_VCPKG_PREFIX}"
+                "DEPS_WORK=${RWZFS_DEPS_WORK}"
+                "${RWZ_BASH}" "${RWZFS_SCRIPTS_DIR}/dwarfs.sh"
+        COMMAND_ERROR_IS_FATAL ANY)
+      file(REMOVE_RECURSE "${RWZFS_DEPS_WORK}")
+      file(WRITE "${RWZFS_DEPS_STAMP}" "${_rwz_recipe}")
+    endif()
+    set(DWARFS_PREFIX "${RWZFS_DEPS_PREFIX}" CACHE PATH "Prefix where dwarfs is installed" FORCE)
+    list(PREPEND CMAKE_PREFIX_PATH "${RWZFS_DEPS_PREFIX}")
+    # pkg-config sees only this dwarfs and the vcpkg prefix (static .pc files first), not the host.
+    set(ENV{PKG_CONFIG_LIBDIR} "${RWZFS_DEPS_PREFIX}/lib/pkgconfig:${RWZFS_VCPKG_PREFIX}/lib/pkgconfig:${RWZFS_VCPKG_PREFIX}/share/pkgconfig")
+    message(STATUS "rwzfs: dwarfs built from script; its dependencies come from vcpkg (${RWZFS_VCPKG_PREFIX})")
+  endif()
+elseif(RWZFS_DEPS_MODE STREQUAL "system")
   set(DWARFS_PREFIX "/usr/local" CACHE PATH "Prefix where dwarfs is installed")
   message(STATUS "rwzfs: using system-provided dependencies (RWZFS_USE_MANAGED_DEPS=OFF)")
 endif()

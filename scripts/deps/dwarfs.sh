@@ -34,13 +34,20 @@ build_dwarfs() {
     python3 "$DEPS_SCRIPTS_DIR/patch-dwarfs-apple.py" "$src"
   fi
 
+  # With an external prefix (vcpkg), CMake searches it, and the library suffix is the platform's default
+  # (vcpkg's static triplets install .a / .lib). Without one, only the managed .a / .lib files are used.
+  local prefix_path="$DEPS_PREFIX" suffix_args=(-DCMAKE_FIND_LIBRARY_SUFFIXES="$LIB_SUFFIX")
+  if [[ -n "$DEPS_EXTERNAL_PREFIX" ]]; then
+    prefix_path="$DEPS_PREFIX;$DEPS_EXTERNAL_PREFIX"
+    suffix_args=()
+  fi
   cmake -S "$src" -B "$build" ${GEN[@]+"${GEN[@]}"} \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     ${msvc_args[@]+"${msvc_args[@]}"} \
     -DCMAKE_BUILD_TYPE=MinSizeRel \
-    -DCMAKE_PREFIX_PATH="$DEPS_PREFIX" \
+    -DCMAKE_PREFIX_PATH="$prefix_path" \
     -DCMAKE_INSTALL_PREFIX="$DWARFS_PREFIX" \
-    -DCMAKE_FIND_LIBRARY_SUFFIXES="$LIB_SUFFIX" \
+    ${suffix_args[@]+"${suffix_args[@]}"} \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DWITH_LIBDWARFS=ON -DWITH_TOOLS=ON \
     -DWITH_TESTS=OFF -DWITH_BENCHMARKS=OFF -DWITH_FUZZ=OFF -DWITH_EXAMPLE=OFF -DWITH_DEV_TOOLS=OFF \

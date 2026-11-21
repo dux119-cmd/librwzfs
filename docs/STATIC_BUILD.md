@@ -1,7 +1,28 @@
-# Managed dependencies
+# Dependencies: vcpkg by default, or the managed scripts
+
+dwarfs's dependencies come from vcpkg by default. The library's `vcpkg.json` lists `dwarfs`; the overlay port in
+`vcpkg-ports/dwarfs` declares dwarfs's own dependencies (boost, fmt, zstd, libarchive, openssl, and the rest), and vcpkg
+installs them recursively. dwarfs is not in the vcpkg registry, so the overlay port builds it from the upstream
+release. Without the port (or with the port's build failing), `scripts/deps/dwarfs.sh` builds it from script against
+vcpkg's installed tree, into `build-deps/` beside `build/`.
+
+The port needs its SHA-512 for the source archive: the placeholder in `vcpkg-ports/dwarfs/portfile.cmake` must be
+replaced with the value vcpkg prints on the first mismatch. Configure with the vcpkg toolchain (set `VCPKG_ROOT`, and the CMake finds
+the toolchain), and use the static triplets in `vcpkg-triplets/` (`x64-linux-static`, `arm64-osx-static`,
+`x64-windows-static`) so the libraries link statically:
+
+    export VCPKG_ROOT=/path/to/vcpkg
+    cmake -S . -B build -DVCPKG_OVERLAY_TRIPLETS=$PWD/vcpkg-triplets -DVCPKG_OVERLAY_PORTS=$PWD/vcpkg-ports \
+          -DVCPKG_TARGET_TRIPLET=x64-linux-static
+
+Without vcpkg (or with `-DRWZFS_USE_VCPKG=OFF`), the managed path builds everything from pinned sources, as before.
+The rest of this page describes that managed path.
+
+## The managed path
 
 rwzfs builds dwarfs and its dependencies from pinned sources, as static, size-optimized libraries, into
-one prefix: `build-deps/`, beside `build/`. This is the default (`RWZFS_USE_MANAGED_DEPS=ON`).
+one prefix: `build-deps/`, beside `build/`. This is used when vcpkg is off (`RWZFS_USE_VCPKG=OFF`, or no vcpkg
+toolchain) and `RWZFS_USE_MANAGED_DEPS=ON`.
 
 Because the prefix sits outside `build/`, every build directory shares it (Release, Debug, sanitizer,
 tests), and cleaning `build/` keeps it. The libraries are built once.
@@ -31,7 +52,7 @@ The FUSE mount binary is not built (it needs FUSE).
 
 ## Use
 
-    cmake -S . -B build                          # managed dependencies, built on first use
+    cmake -S . -B build                          # vcpkg if VCPKG_ROOT is set; otherwise the managed scripts
     cmake -S . -B build -DRWZFS_USE_MANAGED_DEPS=OFF -DDWARFS_PREFIX=/usr/local   # system libraries
 
 To build the dependencies by hand, without CMake:

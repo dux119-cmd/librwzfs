@@ -13,6 +13,8 @@
 #   WITH_TESTS   1 to build googletest as well
 #   KEEP_WORK    1 to keep DEPS_WORK after a successful run
 #   ONLY         comma list of steps to build, when run from build-all.sh
+#   DEPS_EXTERNAL_PREFIX  a prefix that already holds dependencies (vcpkg's installed tree): searched by
+#                  CMake and pkg-config, for dwarfs.sh. Empty: the managed prefix only.
 #   DRY_RUN      1 to print what would be built, and build nothing
 
 set -euo pipefail
@@ -85,7 +87,13 @@ esac
 
 # Only pkg-config files from this prefix are seen. Otherwise a .pc file that says -lcrypto lets the
 # linker pick a system shared library over the static one built here.
-export PKG_CONFIG_LIBDIR="$DEPS_PREFIX/lib/pkgconfig:$DEPS_PREFIX/lib64/pkgconfig"
+PKG_CONFIG_DIRS="$DEPS_PREFIX/lib/pkgconfig:$DEPS_PREFIX/lib64/pkgconfig"
+# An external prefix (vcpkg's installed tree, when the dependencies come from vcpkg) is searched too.
+DEPS_EXTERNAL_PREFIX="$(to_native "${DEPS_EXTERNAL_PREFIX:-}")"
+if [[ -n "$DEPS_EXTERNAL_PREFIX" ]]; then
+  PKG_CONFIG_DIRS="$PKG_CONFIG_DIRS:$DEPS_EXTERNAL_PREFIX/lib/pkgconfig:$DEPS_EXTERNAL_PREFIX/share/pkgconfig"
+fi
+export PKG_CONFIG_LIBDIR="$PKG_CONFIG_DIRS"
 
 # GNU tar on Git Bash reads "D:/..." as host:path. bsdtar (macOS) does not know --force-local.
 TAR_LOCAL=()

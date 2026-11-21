@@ -257,7 +257,9 @@ def system_includes_reachable(path: Path, root: Path, cache: dict[Path, set[str]
 
 
 # scripts/deps builds the managed dependencies (dwarfs and its stack) when the vendored library is configured.
-LIB_COPY_ITEMS = ["include", "src", "CMakeLists.txt", "LICENSE", "scripts/deps"]
+# scripts/deps builds the managed dependencies (and dwarfs, from script, against vcpkg). vcpkg-triplets are the
+# static triplets for vcpkg. The library's dependency list (vcpkg.json) is merged into the project, not copied.
+LIB_COPY_ITEMS = ["include", "src", "CMakeLists.txt", "LICENSE", "scripts/deps", "vcpkg-triplets", "vcpkg-ports"]
 
 
 def copy_library(lib_src: Path, dest: Path, dry: bool) -> None:
@@ -319,7 +321,31 @@ BLOCK_END = "# --- end rwzfs ---"
 BLOCK_LINK_RE = re.compile(r"^target_link_libraries\((\S+) (PRIVATE|PUBLIC|INTERFACE) rwzfs\)$", re.M)
 
 
-def render_block(libdir: str, with_dwarfs: bool, links: list[str]) -> str:
+def merge_vcpkg(root: Path, lib: Path) -> bool:
+    """Adds the library's vcpkg dependencies to the project's vcpkg.json, keeping its own entries and order.
+    Returns True if the project's file changed. A project without vcpkg.json is left alone."""
+    import json
+    project = root / "vcpkg.json"
+    if not project.is_file():
+        return False
+    wanted = json.loads((lib / "vcpkg.json").read_text(encoding="utf-8"))["dependencies"]
+    data = json.loads(project.read_text(encoding="utf-8"))
+    current = data.setdefault("dependencies", [])
+    names = {d if isinstance(d, str) else d["name"] for d in current}
+    added = [d for d in wanted if d not in names]
+    if not added:
+        return False
+    current.extend(added)
+    project.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    print(f"vcpkg.json: added {len(added)} dependency(ies): {', '.join(added)}")
+    return True
+
+
+def uses_vcpkg(root: Path) -> bool:
+    return (root / "vcpkg.json").is_file()
+
+
+def render_block(libdir: str, with_dwarfs: bool, links: list[str], vcpkg: bool = False) -> str:
     """The generated block. FORCE on the dwarfs setting: an old cached value must not override the project's
     choice, which is this block. With dwarfs on, configuring builds the managed dependencies once into
     build-deps/, beside build/."""
@@ -329,9 +355,20 @@ def render_block(libdir: str, with_dwarfs: bool, links: list[str]) -> str:
         f'set(RWZFS_WITH_DWARFS {dwarfs} CACHE BOOL "Build the dwarfs-backed archive reader" FORCE)',
         'set(RWZFS_BUILD_TESTS OFF CACHE BOOL "" FORCE)',
         'set(RWZFS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)',
+    ]
+    if vcpkg and with_dwarfs:
+        lines += [
+            "# This project has vcpkg.json: vcpkg installs dwarfs's dependencies (the managed scripts are not used).",
+            "# Configure with the vcpkg toolchain: -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake",
+            "# and, for the static triplets and the dwarfs port this library needs:",
+            "#   -DVCPKG_OVERLAY_TRIPLETS=<libdir>/vcpkg-triplets -DVCPKG_OVERLAY_PORTS=<libdir>/vcpkg-ports",
+            "# -DVCPKG_TARGET_TRIPLET=x64-linux-static (or arm64-osx-static, x64-windows-static).",
+            'set(RWZFS_USE_MANAGED_DEPS OFF CACHE BOOL "Use the managed dependency scripts" FORCE)',
+        ]
+    lines += [
         f"add_subdirectory({libdir})",
-        "# The first configure builds the managed dependencies (dwarfs and its stack): needs bash, git, curl",
-        "# and a C++23 compiler, and takes a long time. Later configures reuse build-deps/.",
+        "# The first configure of a managed build builds the dependencies: needs bash, git, curl and a C++23",
+        "# compiler, and takes a long time. Later configures reuse build-deps/.",
     ]
     lines += links
     lines.append(BLOCK_END)
@@ -358,7 +395,7 @@ def patch_cmake(root: Path, libdir: str, with_dwarfs: bool, report: Report, dry:
         return text
     targets = [m.group(2) for m in TARGET_RE.finditer(text)]
     links = [f"target_link_libraries({t} {link_visibility(text, t)} rwzfs)" for t in targets]
-    block = render_block(libdir, with_dwarfs, links)
+    block = render_block(libdir, with_dwarfs, links, vcpkg=uses_vcpkg(root))
     new = text.rstrip("\n") + "\n\n" + block + "\n"
     if not targets:
         report.cmake_notes.append("no add_executable/add_library targets found in the top-level CMakeLists.txt: link rwzfs to your targets (target_link_libraries(<t> PRIVATE rwzfs))")
@@ -379,7 +416,7 @@ def regenerate_block(root: Path, libdir: str, with_dwarfs: bool) -> str:
     old = text[text.index(BLOCK_BEGIN):text.index(BLOCK_END) + len(BLOCK_END)]
     links = [f"target_link_libraries({m.group(1)} {link_visibility(text, m.group(1), m.group(2))} rwzfs)"
              for m in BLOCK_LINK_RE.finditer(old)]
-    return text.replace(old, render_block(libdir, with_dwarfs, links), 1)
+    return text.replace(old, render_block(libdir, with_dwarfs, links, vcpkg=uses_vcpkg(root)), 1)
 
 
 def update_block(root: Path, libdir: str, with_dwarfs: bool) -> bool:
@@ -793,9 +830,9 @@ def header_commit(root: Path, libdir: str, excludes: set[str]) -> None:
 
 
 def revert_path(root: Path, libdir: str) -> None:
-    """Restores the vendored directory to the last commit: staged, modified and new files alike."""
-    git(root, "reset", "-q", "--", libdir)
-    git(root, "checkout", "--", libdir)
+    """Restores the vendored directory (and the project's vcpkg.json) to the last commit."""
+    git(root, "reset", "-q", "--", libdir, "vcpkg.json")
+    git(root, "checkout", "--", libdir, "vcpkg.json")
     git(root, "clean", "-fdq", "--", libdir)
 
 
@@ -811,6 +848,9 @@ def refresh_library(root: Path, libdir: str, lib: Path, allow_dirty: bool, with_
     new_id = library_id(lib)
     if library_id(dest) == new_id:
         print(f"{libdir} is up to date (library {new_id}{', revision ' + old_rev if old_rev else ''}).")
+        if merge_vcpkg(root, lib):
+            commit(root, ["vcpkg.json"], "vendor(rwzfs): add the library's dependencies to vcpkg.json",
+                   "Generated by tools/rwzfs_vendor.py --refresh: dependencies the library now needs.\n")
         update_block(root, libdir, with_dwarfs)  # the library can be current while the block is stale
         return 0
     if git(root, "status", "--porcelain", "--", libdir).stdout.strip() and not allow_dirty:
@@ -820,7 +860,10 @@ def refresh_library(root: Path, libdir: str, lib: Path, allow_dirty: bool, with_
     try:
         copy_library(lib, dest, False)
         write_stamp(dest, lib)
+        manifest = merge_vcpkg(root, lib)
         git(root, "add", "-A", "--", libdir)
+        if manifest:
+            git(root, "add", "--", "vcpkg.json")
         stat = git(root, "diff", "--cached", "--stat").stdout.strip()
         if not stat:
             print("no change in the copy; nothing to commit.")
@@ -833,7 +876,8 @@ def refresh_library(root: Path, libdir: str, lib: Path, allow_dirty: bool, with_
         rev = library_revision(lib)
         body = ("Generated by tools/rwzfs_vendor.py --refresh: the vendored library, replaced by the current one.\n\n"
                 f"Library:  {new_id}" + (f"\nRevision: {rev}" if rev else "") + "\n\n" + stat + "\n")
-        committed = commit(root, [libdir], f"vendor(rwzfs): update the vendored library to {new_id}", body)
+        committed = commit(root, [libdir] + (["vcpkg.json"] if manifest else []),
+                           f"vendor(rwzfs): update the vendored library to {new_id}", body)
         update_block(root, libdir, with_dwarfs)
         return 0
     finally:
@@ -892,7 +936,8 @@ def main(argv: list[str]) -> int:
         copy_library(lib, root / args.libdir, False)
         write_stamp(root / args.libdir, lib)
         patch_cmake(root, args.libdir, not args.no_dwarfs, Report(), False)
-        commit(root, [args.libdir, "CMakeLists.txt"],
+        manifest = merge_vcpkg(root, lib)
+        commit(root, [args.libdir, "CMakeLists.txt"] + (["vcpkg.json"] if manifest else []),
                f"vendor(rwzfs): add the library at {args.libdir} and link it",
                "Generated by tools/rwzfs_vendor.py. Copies the library and adds its subdirectory and\n"
                "target_link_libraries() lines to the top-level CMakeLists.txt.\n")

@@ -39,6 +39,7 @@
     "libarchive",
     "libevent",
     "libflac",
+    "nlohmann-json",
     "openssl",
     "parallel-hashmap",
     "pkgconf",

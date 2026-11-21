@@ -10,6 +10,7 @@
 #include "rwzfs/io/stdio.h"
 #include "rwzfs/mount.h"
 #include "rwzfs/revise.h"
+#include "rwzfs/session.h"
 
 #if defined(_WIN32)
 #include "rwzfs/io/win32.h"

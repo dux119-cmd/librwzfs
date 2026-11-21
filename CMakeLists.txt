@@ -149,7 +149,8 @@ set(RWZFS_CORE_SOURCES
   src/overlay/lock.cpp
   src/overlay/flatten.cpp
   src/archive/create_view.cpp
-  src/revise.cpp)
+  src/revise.cpp
+  src/session.cpp)
 
 if(RWZFS_WITH_DWARFS)
   # Static dwarfs libraries needed by the reader. Link order is dependency order.
@@ -196,6 +197,28 @@ else()
 endif()
 
 add_library(rwzfs ${RWZFS_CORE_SOURCES} ${RWZFS_DWARFS_SOURCES})
+
+# Warnings for the library: reported, not errors (so a new compiler cannot break the build). Each flag is
+# checked first, so a compiler that lacks one (MSVC, Clang without a GCC-only warning) just skips it.
+set(RWZFS_WARNING_FLAGS
+  -Wall -Wextra -Wdeprecated -Wno-unknown-pragmas
+  -Wno-conversion -Wno-narrowing
+  -Wdisabled-optimization -Wduplicated-branches -Wtrampolines -Wvla
+  -Wlogical-op -Wduplicated-cond -Wpointer-arith
+  -Wredundant-decls -Wfloat-conversion -Weffc++
+  -Wextra-semi
+  -Wimplicit-fallthrough -Winvalid-utf8
+  -Wtrivial-auto-var-init -Wconversion -Wsign-conversion -Wnarrowing)
+include(CheckCXXCompilerFlag)
+set(RWZFS_ACTIVE_WARNINGS "")
+foreach(_rwz_flag IN LISTS RWZFS_WARNING_FLAGS)
+  string(MAKE_C_IDENTIFIER "RWZ_HAS${_rwz_flag}" _rwz_var)
+  check_cxx_compiler_flag("${_rwz_flag}" ${_rwz_var})
+  if(${_rwz_var})
+    list(APPEND RWZFS_ACTIVE_WARNINGS "${_rwz_flag}")
+  endif()
+endforeach()
+target_compile_options(rwzfs PRIVATE ${RWZFS_ACTIVE_WARNINGS})
 target_include_directories(rwzfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # jemalloc (static, built by scripts/deps/jemalloc.sh) gives faster, leaner allocation for the
 # archive creator and the merged view. Linked publicly, so the final executable gets it. An
@@ -298,6 +321,7 @@ if(RWZFS_BUILD_TESTS)
     tests/fs/proximate_test.cpp
     tests/io/stdio_open_modes_test.cpp
     tests/io/stdio_api_test.cpp
+    tests/archive/session_api_test.cpp
     tests/io/stdio_archive_test.cpp
     tests/io/stdio_lazy_test.cpp
     tests/io/stdio_callbacks_test.cpp
@@ -319,7 +343,8 @@ if(RWZFS_BUILD_TESTS)
       tests/fs/mount_archive_test.cpp
       tests/archive/dwarfs_archive_test.cpp
       tests/archive/create_revise_test.cpp
-      tests/archive/create_view_test.cpp)
+      tests/archive/create_view_test.cpp
+      tests/archive/session_round_trip_test.cpp)
   endif()
 
   add_executable(rwzfs_tests ${RWZFS_TEST_SOURCES})

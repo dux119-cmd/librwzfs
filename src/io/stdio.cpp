@@ -215,7 +215,7 @@ bool mode_has(const char* mode, char c)
 #endif
 
 struct lazy_state {
-	cow::layer l;
+	cow::layer l{};
 	bool readable              = false;
 	bool writable              = false;
 	bool append                = false;

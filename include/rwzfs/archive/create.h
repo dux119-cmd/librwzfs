@@ -7,8 +7,11 @@
 namespace rwz {
 
 // Compression used when the caller does not choose one. wlog and strat need a
-// zstd build that exposes those parameters (the dwarfs-bundled zstd does).
-inline constexpr const char* kDefaultCompression = "zstd:level=12:wlog=27:strat=3";
+// zstd build that exposes those parameters (the dwarfs-bundled zstd does). The
+// default block compression: zstd at level 12, the setting the showcase and the
+// CI build use. Other zstd options (window log, strategy) are not verified with
+// this writer; set them only after testing.
+inline constexpr const char* kDefaultCompression = "zstd:level=12";
 
 struct create_options {
 	std::string compression{kDefaultCompression};
@@ -20,8 +23,9 @@ enum class create_error {
 	tool_failed,    // the writer failed, e.g. an unknown compression option
 	                // (see the diagnostic stream)
 	io,             // the output could not be written or renamed
-	unsupported_platform // needs the dwarfs writer, which this build does
-	                     // not include
+	unsupported_platform, // needs the dwarfs writer, which this build does
+	                      // not include
+	already_exists        // the output file exists; nothing was written
 };
 
 // Builds an archive of the host directory `source_dir`, in-process with the

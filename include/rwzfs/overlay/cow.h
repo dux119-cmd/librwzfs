@@ -26,9 +26,9 @@
 namespace rwz::overlay::cow {
 
 struct layer {
-	std::shared_ptr<const rwz::archive::backend> backend;
-	std::string rel; // archive-relative text, "" for the mount root
-	std::filesystem::path overlay; // overlay directory, or empty for none
+	std::shared_ptr<const rwz::archive::backend> backend{};
+	std::string rel{}; // archive-relative text, "" for the mount root
+	std::filesystem::path overlay{}; // overlay directory, or empty for none
 };
 
 [[nodiscard]] layer layer_of(const rwz::fs::mounts::route& r);

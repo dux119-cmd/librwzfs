@@ -32,8 +32,8 @@ private:
 
 	// Declared before fs_: the reader is constructed from these and must
 	// not outlive them.
-	dwarfs::null_logger lgr_;
-	dwarfs::os_access_generic os_;
+	dwarfs::null_logger lgr_{};
+	dwarfs::os_access_generic os_{};
 	dwarfs::reader::filesystem_v2 fs_;
 };
 

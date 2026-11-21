@@ -138,21 +138,18 @@ private:
 
 // Contents of one archive-only file, read through the backend. The file is a
 // single data extent.
-class archive_view final : public dw::detail::file_view_impl,
-                           public std::enable_shared_from_this<archive_view> {
+class archive_view final : public dw::detail::file_view_impl {
 public:
-	archive_view(std::shared_ptr<const rwz::archive::backend> be,
-	             std::uint64_t inode, dw::file_size_t size,
-	             std::filesystem::path path)
-	        : be_{std::move(be)},
-	          inode_{inode},
-	          size_{size},
-	          path_{std::move(path)}
+	// Created only through create(): extents() must hand out a shared_ptr
+	// to this same object.
+	static std::shared_ptr<archive_view> create(
+	        std::shared_ptr<const rwz::archive::backend> be, std::uint64_t inode,
+	        dw::file_size_t size, std::filesystem::path path)
 	{
-		if (size_ > 0) {
-			extents_.emplace_back(dw::extent_kind::data,
-			                      dw::file_range{0, size_});
-		}
+		auto view = std::shared_ptr<archive_view>(
+		        new archive_view(std::move(be), inode, size, std::move(path)));
+		view->self_ = view;
+		return view;
 	}
 
 	dw::file_size_t size() const override
@@ -179,7 +176,7 @@ public:
 
 	dw::file_extents_iterable extents(std::optional<dw::file_range> range) const override
 	{
-		return dw::file_extents_iterable(shared_from_this(),
+		return dw::file_extents_iterable(self_.lock(),
 		                                 extents_,
 		                                 range.value_or(
 		                                         dw::file_range{0, size_}));
@@ -216,7 +213,22 @@ public:
 	void release_until(dw::file_off_t, std::error_code&) const override {}
 
 private:
+	archive_view(std::shared_ptr<const rwz::archive::backend> be,
+	             std::uint64_t inode, dw::file_size_t size,
+	             std::filesystem::path path)
+	        : be_{std::move(be)},
+	          inode_{inode},
+	          size_{size},
+	          path_{std::move(path)}
+	{
+		if (size_ > 0) {
+			extents_.emplace_back(dw::extent_kind::data,
+			                      dw::file_range{0, size_});
+		}
+	}
+
 	std::shared_ptr<const rwz::archive::backend> be_{};
+	std::weak_ptr<archive_view> self_{};
 	std::uint64_t inode_{};
 	dw::file_size_t size_{};
 	std::filesystem::path path_{};
@@ -252,6 +264,8 @@ std::optional<located> locate(const std::filesystem::path& path)
 #if defined(_WIN32)
 class view_dir_reader final : public dw::dir_reader {
 public:
+	view_dir_reader(const view_dir_reader&)            = delete;
+	view_dir_reader& operator=(const view_dir_reader&) = delete;
 	view_dir_reader(void* find, WIN32_FIND_DATAW first,
 	                std::filesystem::path dir_path)
 	        : find_{find},
@@ -292,6 +306,8 @@ private:
 #else
 class view_dir_reader final : public dw::dir_reader {
 public:
+	view_dir_reader(const view_dir_reader&)            = delete;
+	view_dir_reader& operator=(const view_dir_reader&) = delete;
 	view_dir_reader(DIR* dir, std::filesystem::path dir_path)
 	        : dir_{dir},
 	          dir_path_{std::move(dir_path)}
@@ -411,7 +427,7 @@ public:
 		if (loc->node.where == cow::origin::overlay) {
 			return dw::os_access_generic::open_file(loc->node.host);
 		}
-		return dw::file_view(std::make_shared<archive_view>(
+		return dw::file_view(archive_view::create(
 		        loc->layer.backend,
 		        loc->node.info.inode,
 		        static_cast<dw::file_size_t>(loc->node.info.size),

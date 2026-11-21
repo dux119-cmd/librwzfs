@@ -1,6 +1,7 @@
 // Used when RWZFS_WITH_DWARFS=OFF: the library builds without archive reading.
-// Mounting always fails with OpenFailed. Everything else (paths, host IO,
-// overlay, creation, revision) still works.
+// A missing archive is ArchiveNotFound, as in the dwarfs build; any other
+// archive fails with OpenFailed. Everything else (paths, host IO, overlay,
+// creation, revision) still works.
 #include <filesystem>
 #include <string>
 
@@ -11,17 +12,29 @@ namespace rwz {
 
 namespace stdfs = std::filesystem;
 
-MountError mount_archive(const stdfs::path&)
+namespace {
+
+MountError no_archive_support(const stdfs::path& archive)
 {
-	return MountError::OpenFailed;
+	std::error_code ec = {};
+	return stdfs::exists(archive, ec) ? MountError::OpenFailed
+	                                  : MountError::ArchiveNotFound;
 }
-MountError mount_archive(const stdfs::path&, const stdfs::path&)
+
+} // namespace
+
+MountError mount_archive(const stdfs::path& archive)
 {
-	return MountError::OpenFailed;
+	return no_archive_support(archive);
 }
-MountError mount_archive(const stdfs::path&, const stdfs::path&, const mount_options&)
+MountError mount_archive(const stdfs::path& archive, const stdfs::path&)
 {
-	return MountError::OpenFailed;
+	return no_archive_support(archive);
+}
+MountError mount_archive(const stdfs::path& archive, const stdfs::path&,
+                         const mount_options&)
+{
+	return no_archive_support(archive);
 }
 
 bool unmount_archive(const stdfs::path& mountpoint)

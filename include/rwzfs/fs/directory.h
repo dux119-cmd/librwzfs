@@ -119,11 +119,11 @@ namespace detail {
 // Position within one archive directory listing. Held by value, so copies
 // advance independently.
 struct archive_cursor {
-	std::shared_ptr<const rwz::archive::backend> backend;
-	std::filesystem::path overlay; // empty when the mount has no overlay
-	std::filesystem::path parent_absolute;
-	std::string parent_rel;
-	std::shared_ptr<const std::vector<rwz::archive::child>> children;
+	std::shared_ptr<const rwz::archive::backend> backend{};
+	std::filesystem::path overlay{}; // empty when the mount has no overlay
+	std::filesystem::path parent_absolute{};
+	std::string parent_rel{};
+	std::shared_ptr<const std::vector<rwz::archive::child>> children{};
 	std::size_t index{0};
 };
 

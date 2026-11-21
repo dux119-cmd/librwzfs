@@ -28,8 +28,8 @@ struct entry {
 };
 
 struct child {
-	std::string name;
-	entry info;
+	std::string name{};
+	entry info{};
 };
 
 // Read-only view of one mounted archive. All paths are archive-relative text

@@ -19,5 +19,5 @@ TEST(CreateArchive, MissingSourceIsReported)
 
 TEST(CreateArchive, DefaultCompressionMatchesCliSpec)
 {
-	EXPECT_STREQ(rwz::kDefaultCompression, "zstd:level=12:wlog=27:strat=3");
+	EXPECT_STREQ(rwz::kDefaultCompression, "zstd:level=12");
 }

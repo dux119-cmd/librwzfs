@@ -21,14 +21,14 @@ namespace {
 using backend_ptr = std::shared_ptr<const rwz::archive::backend>;
 
 struct open_file {
-	backend_ptr backend;
+	backend_ptr backend{};
 	std::uint64_t inode{0};
 	std::uint64_t size{0};
 	std::uint64_t offset{0};
 };
 
 struct open_dir {
-	std::vector<dirent> entries;
+	std::vector<dirent> entries{};
 	std::size_t next{0};
 };
 

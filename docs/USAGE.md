@@ -31,14 +31,14 @@ namespaces (`rwz::detail::archive_io`, and so on) are not public API.
 #include "rwzfs/archive/create.h"
 
 rwz::create_options create;
-create.compression = "zstd:level=12";   // default: "zstd:level=12:wlog=27:strat=3"
+create.compression = "zstd:level=12";   // default: "zstd:level=12"
 auto ok = rwz::create_archive("source/", "project.dwarfs", create);
 if (!ok) { /* create_error: source_missing, tool_not_found, tool_failed, io, ... */ }
 ```
 
 - The archive is written to `project.dwarfs.tmp` and renamed on success. A failure leaves no
   partial archive.
-- The default compression needs a zstd that exposes `wlog` and `strat`. If the build rejects it,
+- The default compression is `zstd:level=12`. Other zstd options are unverified with the writer. If a build rejects a setting,
   `tool_failed` is returned and the reason is on the diagnostic stream.
 
 ## 2. Mount with an overlay
@@ -207,3 +207,26 @@ this second route, since its storage is shared with the archive listing.)
   overwrite an existing file.
 
 `--overlay-root` sets the write root; without it the library's default is used.
+
+## The high-level interface (`rwzfs/session.h`)
+
+For most programs, three calls cover the common work. They are in `rwz::`:
+
+    // Mount an archive for a scope; the destructor unmounts it.
+    auto game = rwz::session::open("Game (USA).dwarfs", {.overlay_root = save_dir});
+    if (!game) { report(rwz::to_string(game.error())); return; }
+    std::FILE* rom = rwz::stdio::fopen((game->root() / "Game.nes").string().c_str(), "rb");
+
+    // What the overlay changed, and a revision that folds those changes into a new archive.
+    rwz::overlay_changes c = game->changes();          // c.written, c.deleted, c.new_dirs, c.empty()
+    auto revised = game->revise();                     // Game (USA)-rev1.dwarfs, original untouched
+
+    // Create an archive from a game directory. A bare name goes to the current directory.
+    auto made = rwz::archive_directory("Game (USA)", "/path/to/game/dir");
+
+`session::open` returns `std::expected<session, MountError>`. `session` is movable, not copyable, and it
+unmounts on destruction or on `close()`. `archive_directory` never overwrites an existing file
+(`create_error::already_exists`). The lower-level calls in `mount.h`, `revise.h` and `archive/create.h`
+remain available.
+
+`rwz-tool` is a thin front end over this interface.

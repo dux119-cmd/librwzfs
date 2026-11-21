@@ -11,7 +11,7 @@ writer's scanner over the tree, with the same settings as the `mkdwarfs` CLI fla
 - **Categorization** (`--categorize`): the default categorizers, `fits`, `pcmaudio`, `binary` and
   `incompressible`, with their default options.
 - **History** (`--no-history`): off. No history section is written.
-- **Compression**: `options.compression`, default `zstd:level=12:wlog=27:strat=3`. Metadata sections use
+- **Compression**: `options.compression`, default `zstd:level=12`. Metadata sections use
   zstd.
 - **Segmenter defaults**: the per-category values `mkdwarfs` uses for its default level.
 

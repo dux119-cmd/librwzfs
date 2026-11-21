@@ -4,7 +4,9 @@
 # Versions: versions.sh (DWARFS_TAG). Run last by build-all.sh.
 #
 # Feature set: zstd and FLAC compression only. LZ4, LZMA, Brotli, RICEPP, FUSE, man pages and desktop
-# integration are off. The command-line tools are off too: rwzfs writes archives through the library.
+# integration are off. The command-line tools are built and installed to $DWARFS_PREFIX/bin: mkdwarfs
+# (create archives by hand), dwarfsck (check and inspect them), dwarfsextract (unpack them). rwzfs itself
+# does not use the tools; it writes archives through the library.
 DEP_OPTIMIZE=size
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
@@ -40,7 +42,7 @@ build_dwarfs() {
     -DCMAKE_INSTALL_PREFIX="$DWARFS_PREFIX" \
     -DCMAKE_FIND_LIBRARY_SUFFIXES="$LIB_SUFFIX" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-    -DWITH_LIBDWARFS=ON -DWITH_TOOLS=OFF \
+    -DWITH_LIBDWARFS=ON -DWITH_TOOLS=ON \
     -DWITH_TESTS=OFF -DWITH_BENCHMARKS=OFF -DWITH_FUZZ=OFF -DWITH_EXAMPLE=OFF -DWITH_DEV_TOOLS=OFF \
     -DWITH_FUSE_DRIVER=OFF -DWITH_FUSE_EXTRACT_BINARY=OFF -DWITH_LEGACY_FUSE=OFF \
     -DWITH_DESKTOP_INTEGRATION=OFF -DWITH_MAN_PAGES=OFF -DWITH_MAN_OPTION=OFF -DWITH_PXATTR=OFF \
@@ -52,6 +54,14 @@ build_dwarfs() {
     -DENABLE_STACKTRACE=OFF -DDISABLE_CCACHE=ON
   cmake --build "$build" --parallel "$JOBS"
   cmake --install "$build"
+
+  # The tools are part of this build: a missing one means the install is incomplete.
+  local tool
+  for tool in mkdwarfs dwarfsck dwarfsextract; do
+    local exe="$DWARFS_PREFIX/bin/$tool"
+    [[ $IS_WINDOWS == 1 ]] && exe="$exe.exe"
+    [[ -f "$exe" ]] || { echo "error: $tool was not installed to $DWARFS_PREFIX/bin" >&2; exit 1; }
+  done
 
   local lib cand found
   for lib in libdwarfs_reader libdwarfs_writer libdwarfs_common libdwarfs_decompressor libdwarfs_compressor; do
@@ -66,7 +76,7 @@ build_dwarfs() {
     echo "error: dwarfs headers are incomplete under $DWARFS_PREFIX/include" >&2
     exit 1
   }
-  echo "dwarfs installed under $DWARFS_PREFIX"
+  echo "dwarfs installed under $DWARFS_PREFIX (tools in $DWARFS_PREFIX/bin)"
 }
 
 dep_main dwarfs build_dwarfs

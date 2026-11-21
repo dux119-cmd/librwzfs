@@ -22,6 +22,13 @@ tests), and cleaning `build/` keeps it. The libraries are built once.
 CMake runs `build-all.sh` when a managed build is configured and the recipe has changed. The recipe is
 a hash of every file in `scripts/deps`, so any change to a version or an action rebuilds everything.
 
+## The dwarfs tools
+
+The dwarfs build also installs its command-line tools to `build-deps/bin`: `mkdwarfs` (build an archive
+from a directory by hand), `dwarfsck` (check and inspect an archive) and `dwarfsextract` (unpack one). Use
+them to make or verify archives outside rwzfs. rwzfs does not need them: it writes archives in-process.
+The FUSE mount binary is not built (it needs FUSE).
+
 ## Use
 
     cmake -S . -B build                          # managed dependencies, built on first use

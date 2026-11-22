@@ -197,8 +197,22 @@ rewrites SDL's file-open calls to the bridge in `integrations/sdl/`:
 - `SDL_IOFromFile(...)` (SDL3) becomes `rwz_SDL_IOFromFile(...)`
 - `SDL_RWFromFile(...)` (SDL2) becomes `rwz_SDL_RWFromFile(...)`
 
-This includes the calls inside SDL_sound's own C sources in your project. C files get only this rule (the C++ wrapper
+This includes the calls inside SDL_sound's own C sources in your project. The scan covers all vendored code under
+`src/libs/`. The rwzfs library itself (`<libdir>`) is always skipped, whatever `--exclude` says. Third-party code there is scanned too, so its file IO is
+rewritten; use `--exclude <dir>` for any vendored directory that must stay as it is. C files get only this rule (the C++ wrapper
 names do not compile in C), and they get the C bridge header, not the C++ headers. Declarations in SDL's own headers
 are not changed. The generated CMake block compiles `rwz_sdl_io.cpp` into each target, so the bridge is built with the
 project. The bridge is written against the public SDL3 and SDL2 APIs; compile it against your SDL version before
 relying on it.
+
+## Vendored CMake projects
+
+A vendored project under `src/libs/` with its own `CMakeLists.txt` (riffcpp, for example) gets the rewritten calls like
+any other code, so it needs the rwzfs headers and the rwzfs library. The tool does both:
+
+- every file that uses `rwz::` includes `rwzfs/rwz.h` (one commit, made after the rewrites);
+- the generated block links each target defined in those projects to rwzfs, guarded with `if(TARGET ...)`. Linking
+  rwzfs also gives the target rwzfs's include directory. An `add_library(<name> INTERFACE)` target gets an `INTERFACE`
+  link, which is the only form CMake accepts for it.
+
+Run the tool (or `--refresh`) after adding a vendored project, so its target is picked up.

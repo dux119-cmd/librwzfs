@@ -121,7 +121,10 @@ SOURCE_EXTS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".i
 CPP_ONLY_EXTS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".ipp", ".inl"}
 CXX_HINT = re.compile(r"\b(class|namespace|template|std::|constexpr|nullptr|override|noexcept)\b")
 
-DEFAULT_EXCLUDES = {"build", ".git", "external", "third_party", "src/libs"}
+# Directories the tool does not scan. The rwzfs library itself is always skipped (its own directory). Other
+# vendored code under src/libs (decoders, third-party sources) IS scanned: it does file IO too. Add --exclude
+# for any vendored directory that must stay as it is.
+DEFAULT_EXCLUDES = {"build", ".git", "external", "third_party"}
 
 
 # ---- helpers from the whole-file tool
@@ -359,6 +362,39 @@ def resolve_deps(root: Path, requested: str | None) -> str:
     return "scripts"
 
 
+TARGET_DEF_RE = re.compile(r"add_(?:library|executable)\(\s*([A-Za-z_][\w.+-]*)")
+
+
+def vendored_target_links(root: Path, libdir: str, excludes: set[str], top_links: set[str]) -> list[str]:
+    """The targets in each vendored CMake project (src/libs/<x>/CMakeLists.txt, not rwzfs's own) whose sources the
+    rewrite touches, linked to rwzfs. rwzfs's include directory comes with the link, so rwzfs/rwz.h resolves there.
+    Guarded with if(TARGET), since a project may not build a given target."""
+    own = (root / libdir).resolve()
+    names: set[str] = set()
+    interface: set[str] = set()  # INTERFACE libraries: CMake accepts only INTERFACE links for them
+    for site in scan_project(root, libdir, excludes, "replace")[0]:
+        d = (root / site.path).resolve().parent
+        while True:
+            if root.resolve() not in d.parents and d != root.resolve():
+                break
+            cml = d / "CMakeLists.txt"
+            if cml.is_file() and own not in cml.resolve().parents and cml.resolve().parent != own:
+                text = cml.read_text(encoding="utf-8", errors="surrogateescape")
+                found = set(TARGET_DEF_RE.findall(text))
+                if found:
+                    names |= found
+                    interface |= set(INTERFACE_LIB_RE.findall(text))
+                    break
+            if d == root.resolve():
+                break
+            d = d.parent
+    lines: list[str] = []
+    for n in sorted(names - top_links):
+        vis = "INTERFACE" if n in interface else "PRIVATE"
+        lines += [f"if(TARGET {n})", f"  target_link_libraries({n} {vis} rwzfs)", "endif()"]
+    return lines
+
+
 def render_block(libdir: str, with_dwarfs: bool, links: list[str], deps: str, sdl_targets: list[str] | None = None) -> str:
     """The generated block. RWZFS_WITH_DWARFS is forced (the project's choice); RWZFS_DEPS is a default that a
     -DRWZFS_DEPS=... on the command line overrides (no FORCE on it)."""
@@ -454,6 +490,7 @@ def patch_cmake(root: Path, libdir: str, with_dwarfs: bool, report: Report, dry:
     targets = [m.group(2) for m in TARGET_RE.finditer(text)]
     links = [f"target_link_libraries({t} {link_visibility(text, t)} rwzfs)" for t in targets]
     sdl_targets = targets if needs_sdl_bridge(root, libdir, DEFAULT_EXCLUDES) else None
+    links += vendored_target_links(root, libdir, DEFAULT_EXCLUDES, set(targets))
     block = render_block(libdir, with_dwarfs, links, deps, sdl_targets)
     if deps == "vcpkg" and with_dwarfs and not PROJECT_RE.search(text):
         report.cmake_notes.append("no project() call found: add the vcpkg overlay lines (see docs/VENDORING.md) before the first project() call")
@@ -478,7 +515,9 @@ def regenerate_block(root: Path, libdir: str, with_dwarfs: bool, deps: str = "vc
     old = text[text.index(BLOCK_BEGIN):text.index(BLOCK_END) + len(BLOCK_END)]
     links = [f"target_link_libraries({m.group(1)} {link_visibility(text, m.group(1), m.group(2))} rwzfs)"
              for m in BLOCK_LINK_RE.finditer(old)]
-    sdl_targets = [m.group(1) for m in BLOCK_LINK_RE.finditer(old)] if needs_sdl_bridge(root, libdir, DEFAULT_EXCLUDES) else None
+    top = [m.group(1) for m in BLOCK_LINK_RE.finditer(old)]
+    sdl_targets = top if needs_sdl_bridge(root, libdir, DEFAULT_EXCLUDES) else None
+    links += vendored_target_links(root, libdir, DEFAULT_EXCLUDES, set(top))
     new = text.replace(old, render_block(libdir, with_dwarfs, links, deps, sdl_targets), 1)
     return place_pre(new, render_pre(libdir) if deps == "vcpkg" and with_dwarfs else None)
 
@@ -509,7 +548,10 @@ def update_block(root: Path, libdir: str, with_dwarfs: bool, deps: str = "vcpkg"
 
 
 def scan(root: Path, excludes: set[str], libdir: str) -> list[Path]:
-    skip_roots = {(root / e).resolve() for e in excludes | {libdir}}
+    """Source files to rewrite. The vendored rwzfs copy (libdir) is always skipped, whatever the excludes say:
+    rewriting the library's own code would break it. Everything else, including other vendored code under
+    src/libs, is scanned unless it is excluded."""
+    skip_roots = {(root / e).resolve() for e in excludes | {libdir.rstrip("/")}}
     out = []
     for p in root.rglob("*"):
         if not p.is_file() or p.suffix.lower() not in SOURCE_EXTS:
@@ -970,6 +1012,29 @@ def _insert_after_last_include(text: str, line: str) -> str:
     return "\n".join(lines)
 
 
+RWZ_HEADER_LINE = '#include "rwzfs/rwz.h"'
+RWZ_HEADER_RE = re.compile(r'#\s*include\s*[<"]rwzfs/rwz\.h[>"]')
+
+
+def ensure_rwz_includes(root: Path, libdir: str, excludes: set[str]) -> None:
+    """Every C++ file that uses rwz:: includes rwzfs/rwz.h, as one commit made after the rewrites. The include is
+    added here, not with the earlier header commit, so a file rewritten later still gets it."""
+    changed: list[str] = []
+    for path in scan(root, excludes, libdir):
+        if path.suffix.lower() == ".c":
+            continue  # C files get the SDL bridge include, not the C++ header
+        rel = str(path.relative_to(root))
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        if "rwz::" not in text or RWZ_HEADER_RE.search(text):
+            continue
+        path.write_text(_insert_after_last_include(text, RWZ_HEADER_LINE), encoding="utf-8", errors="surrogateescape")
+        changed.append(rel)
+    if changed:
+        body = ("Generated by tools/rwzfs_vendor.py: these files use rwz:: names and now include rwzfs/rwz.h.\n\n"
+                + "\n".join(f"  {rel}" for rel in changed) + "\n")
+        commit(root, changed, "vendor(rwzfs): include rwzfs/rwz.h where the rwz:: names are used", body)
+
+
 def revert_path(root: Path, libdir: str) -> None:
     """Restores the vendored directory (and the project's vcpkg.json) to the last commit."""
     git(root, "reset", "-q", "--", libdir, "vcpkg.json")
@@ -1133,6 +1198,8 @@ def main(argv: list[str]) -> int:
     if quit_now:
         print("stopped. Rerun to continue with the remaining sites.")
         return 0
+
+    ensure_rwz_includes(root, args.libdir, excludes)
 
     # 5. unused C headers: one scan, then one commit per removal (bottom-up within each file)
     drops = sorted(scan_project(root, args.libdir, excludes, "drop")[0], key=queue_order)

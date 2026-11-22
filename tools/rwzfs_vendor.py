@@ -260,7 +260,7 @@ def system_includes_reachable(path: Path, root: Path, cache: dict[Path, set[str]
 # scripts/deps builds the managed dependencies (dwarfs and its stack) when the vendored library is configured.
 # scripts/deps builds the managed dependencies (and dwarfs, from script, against vcpkg). vcpkg-triplets are the
 # static triplets for vcpkg. The library's dependency list (vcpkg.json) is merged into the project, not copied.
-LIB_COPY_ITEMS = ["include", "src", "CMakeLists.txt", "LICENSE", "scripts/deps", "vcpkg-triplets", "vcpkg-ports"]
+LIB_COPY_ITEMS = ["include", "src", "CMakeLists.txt", "LICENSE", "scripts/deps", "vcpkg-triplets", "vcpkg-ports", "integrations"]
 
 
 def copy_library(lib_src: Path, dest: Path, dry: bool) -> None:
@@ -359,7 +359,7 @@ def resolve_deps(root: Path, requested: str | None) -> str:
     return "scripts"
 
 
-def render_block(libdir: str, with_dwarfs: bool, links: list[str], deps: str) -> str:
+def render_block(libdir: str, with_dwarfs: bool, links: list[str], deps: str, sdl_targets: list[str] | None = None) -> str:
     """The generated block. RWZFS_WITH_DWARFS is forced (the project's choice); RWZFS_DEPS is a default that a
     -DRWZFS_DEPS=... on the command line overrides (no FORCE on it)."""
     dwarfs = "ON" if with_dwarfs else "OFF"
@@ -384,6 +384,13 @@ def render_block(libdir: str, with_dwarfs: bool, links: list[str], deps: str) ->
         "# compiler, and takes a long time. Later configures reuse build-deps/.",
     ]
     lines += links
+    for t in sdl_targets or []:
+        # The SDL file-open bridge: compiled into each target, since the rewritten C files live in it.
+        lines += [
+            f"if(TARGET {t})",
+            f'  target_sources({t} PRIVATE "${{CMAKE_CURRENT_SOURCE_DIR}}/{libdir}/integrations/sdl/rwz_sdl_io.cpp")',
+            "endif()",
+        ]
     lines.append(BLOCK_END)
     return "\n".join(lines)
 
@@ -446,7 +453,8 @@ def patch_cmake(root: Path, libdir: str, with_dwarfs: bool, report: Report, dry:
         return text
     targets = [m.group(2) for m in TARGET_RE.finditer(text)]
     links = [f"target_link_libraries({t} {link_visibility(text, t)} rwzfs)" for t in targets]
-    block = render_block(libdir, with_dwarfs, links, deps)
+    sdl_targets = targets if needs_sdl_bridge(root, libdir, DEFAULT_EXCLUDES) else None
+    block = render_block(libdir, with_dwarfs, links, deps, sdl_targets)
     if deps == "vcpkg" and with_dwarfs and not PROJECT_RE.search(text):
         report.cmake_notes.append("no project() call found: add the vcpkg overlay lines (see docs/VENDORING.md) before the first project() call")
     new = text.rstrip("\n") + "\n\n" + block + "\n"
@@ -470,7 +478,8 @@ def regenerate_block(root: Path, libdir: str, with_dwarfs: bool, deps: str = "vc
     old = text[text.index(BLOCK_BEGIN):text.index(BLOCK_END) + len(BLOCK_END)]
     links = [f"target_link_libraries({m.group(1)} {link_visibility(text, m.group(1), m.group(2))} rwzfs)"
              for m in BLOCK_LINK_RE.finditer(old)]
-    new = text.replace(old, render_block(libdir, with_dwarfs, links, deps), 1)
+    sdl_targets = [m.group(1) for m in BLOCK_LINK_RE.finditer(old)] if needs_sdl_bridge(root, libdir, DEFAULT_EXCLUDES) else None
+    new = text.replace(old, render_block(libdir, with_dwarfs, links, deps, sdl_targets), 1)
     return place_pre(new, render_pre(libdir) if deps == "vcpkg" and with_dwarfs else None)
 
 
@@ -689,6 +698,49 @@ def find_sites(rel: str, text: str, has: set[str], aliases: set[str]) -> tuple[l
     return sites, silent
 
 
+SDL_OPEN_RE = re.compile(r"(?<![\w.>:])(?P<name>SDL_IOFromFile|SDL_RWFromFile)\s*\(")
+SDL_PUBLIC_HEADER_RE = re.compile(r"(^|/)(SDL[23]|SDL_rwops\.h|SDL_iostream\.h|SDL\.h)$")
+BRIDGE_REL = "integrations/sdl/rwz_sdl_io.h"
+
+
+def sdl_sites(rel: str, text: str) -> list[Site]:
+    """SDL's own file opening (SDL_IOFromFile in SDL3, SDL_RWFromFile in SDL2). SDL does its C-library I/O, which
+    cannot see a path under the archive root, so these calls go to the bridge (integrations/sdl). Declarations in
+    SDL's headers are not rewritten."""
+    if SDL_PUBLIC_HEADER_RE.search(rel):
+        return []
+    out: list[Site] = []
+    for lineno, line in enumerate(text.split("\n"), 1):
+        if "#include" in line or "#define" in line:
+            continue
+        mask = _code_mask(line)
+        for m in SDL_OPEN_RE.finditer(line):
+            if not mask[m.start("name")]:
+                continue
+            prefix = line[:m.start()].rstrip()
+            last = re.search(r"(\w+)$", prefix)
+            if re.search(r"[\w*&>]$", prefix) and (last is None or last.group(1) not in _NON_TYPE_WORDS):
+                continue  # a declaration: "SDL_RWops *SDL_RWFromFile(...)"
+            name = m.group("name")
+            out.append(Site(rel, lineno, m.start("name"), name, "rwz_" + name, "rewrite",
+                            "SDL opens files with its own C-library I/O, which cannot see the archive; "
+                            "the rwzfs bridge opens it through rwz::stdio", "sdl"))
+    return out
+
+
+def bridge_include(rel: str, libdir: str) -> str:
+    """The #include line for the bridge header, relative to the file that includes it."""
+    target = f"{libdir}/{BRIDGE_REL}"
+    return f'#include "{os.path.relpath(target, os.path.dirname(rel) or ".").replace(os.sep, "/")}"'
+
+
+def needs_sdl_bridge(root: Path, libdir: str, excludes: set[str]) -> bool:
+    for path in scan(root, excludes, libdir):
+        if SDL_OPEN_RE.search(path.read_text(encoding="utf-8", errors="surrogateescape")):
+            return True
+    return False
+
+
 def _inner_args(text: str, open_paren: int) -> str:
     """The text between the parentheses opened at open_paren (empty if unbalanced)."""
     depth = 0
@@ -833,6 +885,9 @@ def scan_project(root: Path, libdir: str, excludes: set[str], phase: str) -> tup
     for path in scan(root, excludes, libdir):
         rel = str(path.relative_to(root))
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        if phase == "replace" and path.suffix == ".c":
+            out.extend(sdl_sites(rel, text))  # C: only the SDL file-open rule (the rwz C++ names do not compile in C)
+            continue
         if path.suffix == ".c" or (path.suffix == ".h" and not CXX_HINT.search(text)):
             continue
         if phase == "replace":
@@ -840,6 +895,7 @@ def scan_project(root: Path, libdir: str, excludes: set[str], phase: str) -> tup
             sites, silent = find_sites(rel, text, has, set(FS_ALIAS_DECL.findall(text)))
             silent_total += silent
             out.extend(sites)
+            out.extend(sdl_sites(rel, text))
         else:
             out.extend(drop_sites(rel, text))
     return out, silent_total
@@ -850,20 +906,30 @@ def refresh_file(root: Path, args, excludes: set[str], queue: list[Site], path: 
     """Drops this file's queued sites and rescans the file alone, after its contents changed."""
     p = root / path
     text = p.read_text(encoding="utf-8", errors="surrogateescape")
-    has = system_includes_reachable(p, root, {})
-    sites, _ = find_sites(path, text, has, set(FS_ALIAS_DECL.findall(text)))
+    if path.endswith(".c"):
+        sites = sdl_sites(path, text)
+    else:
+        has = system_includes_reachable(p, root, {})
+        sites, _ = find_sites(path, text, has, set(FS_ALIAS_DECL.findall(text)))
+        sites = sites + sdl_sites(path, text)
     rest = [q for q in queue if q.path != path]
     fresh = [q for q in sites if site_key(q) not in skipped]
     return sorted(rest + fresh, key=queue_order)
 
 
 def header_commit(root: Path, libdir: str, excludes: set[str]) -> None:
-    """One commit adding every rwzfs include the replacements will need, before any code change."""
+    """One commit adding every rwzfs include the replacements will need, before any code change: the C++ wrapper
+    headers, and the SDL bridge header in files that open SDL files (C files included)."""
     needed: dict[str, set[str]] = {}
+    sdl_files: set[str] = set()
     for path in scan(root, excludes, libdir):
         rel = str(path.relative_to(root))
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
-        if path.suffix == ".c" or (path.suffix == ".h" and not CXX_HINT.search(text)):
+        if sdl_sites(rel, text):
+            sdl_files.add(rel)
+        if path.suffix == ".c":
+            continue  # C: the SDL bridge is the only rwzfs header a C file gets
+        if path.suffix == ".h" and not CXX_HINT.search(text):
             continue
         has = system_includes_reachable(path, root, {})
         sites, _ = find_sites(rel, text, has, set(FS_ALIAS_DECL.findall(text)))
@@ -871,10 +937,19 @@ def header_commit(root: Path, libdir: str, excludes: set[str]) -> None:
         if fams:
             needed[rel] = fams
     changed: list[str] = []
-    for rel, fams in sorted(needed.items()):
+    for rel in sorted(set(needed) | sdl_files):
         p = root / rel
         text = p.read_text(encoding="utf-8", errors="surrogateescape")
-        new, added = add_includes(text, fams)
+        new = text
+        added = False
+        if rel in needed:
+            new, added_lines = add_includes(new, needed[rel])
+            added = added or bool(added_lines)
+        if rel in sdl_files:
+            line = bridge_include(rel, libdir)
+            if line not in new:
+                new = _insert_after_last_include(new, line)
+                added = True
         if added:
             p.write_text(new, encoding="utf-8", errors="surrogateescape")
             changed.append(rel)
@@ -882,6 +957,17 @@ def header_commit(root: Path, libdir: str, excludes: set[str]) -> None:
         body = "Generated by tools/rwzfs_vendor.py: the rwzfs headers used by the replacements that follow.\n\n" + \
                "\n".join(f"  {rel}" for rel in changed) + "\n"
         commit(root, changed, "vendor(rwzfs): include the rwzfs headers the replacements need", body)
+
+
+def _insert_after_last_include(text: str, line: str) -> str:
+    """Adds one #include line after the file's last #include (or at the top)."""
+    lines = text.split("\n")
+    last = None
+    for i, l in enumerate(lines):
+        if HEADER_RE.match(l):
+            last = i
+    lines.insert(0 if last is None else last + 1, line)
+    return "\n".join(lines)
 
 
 def revert_path(root: Path, libdir: str) -> None:

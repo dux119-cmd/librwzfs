@@ -188,3 +188,17 @@ Your configure preset still needs the triplet, for example `VCPKG_TARGET_TRIPLET
 `arm64-osx-static`, `x64-windows-static-rel`), and the vcpkg toolchain. A project whose manifest has a
 `builtin-baseline` also needs the port to be found through the overlay: the error "the baseline does not contain an
 entry for port dwarfs" means the overlay was not seen.
+
+## SDL file opening
+
+SDL opens files with its own C-library I/O, which cannot see a path under the archive root. The tool therefore
+rewrites SDL's file-open calls to the bridge in `integrations/sdl/`:
+
+- `SDL_IOFromFile(...)` (SDL3) becomes `rwz_SDL_IOFromFile(...)`
+- `SDL_RWFromFile(...)` (SDL2) becomes `rwz_SDL_RWFromFile(...)`
+
+This includes the calls inside SDL_sound's own C sources in your project. C files get only this rule (the C++ wrapper
+names do not compile in C), and they get the C bridge header, not the C++ headers. Declarations in SDL's own headers
+are not changed. The generated CMake block compiles `rwz_sdl_io.cpp` into each target, so the bridge is built with the
+project. The bridge is written against the public SDL3 and SDL2 APIs; compile it against your SDL version before
+relying on it.

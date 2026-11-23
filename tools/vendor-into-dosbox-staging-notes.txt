@@ -1,0 +1,33 @@
+python3 tools/rwzfs_vendor.py \
+  ../dosbox-staging \
+  --exclude \
+    src/dos/cdrom_ioctl_linux.cpp \
+    src/cpu/dyn_cache.h  \
+    src/dos/cdrom_win32.cpp \
+    tests/ \
+    src/hardware/audio/ \
+    src/libs/http/ \
+    src/misc/std_filesystem.h \
+    src/cpu/ \
+    src/hardware/video/reelmagic/tools/
+
+benchmarks Rayman 21 CDROM WAV track mounting:
+
+-S level duration size   order     hash  lookback,winsize,winstep,bloom
+15 22      20 ms  302 MB default
+16 22      21 ms  300 MB path
+16 22      21 ms  300 MB default
+18 12      26 ms  308 MB path      
+18 22      30 ms  296 MB path
+17 22      30 ms  298 MB path    xx128 24 24 8 10
+18 12      32 ms  308 MB revpath
+19 22      35 ms  296 MB path
+19 22      35 ms  296 MB path    xx128  1 12 8  4
+19 22      36 ms  296 MB path    xx128  1 12 3 10
+19 22      37 ms  296 MB path    xx128  1 24 3  4
+19 22      38 ms  296 MB revpath
+19 22      38 ms  296 MB path    xx64   1 12 3  4
+19 22      39 ms  295 MB path    xx128 16 12 3  4
+20 22      64 ms  204 MB path
+24 16    1300 ms  405 MB
+30 22     120 s   252 MB default

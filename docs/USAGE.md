@@ -31,14 +31,14 @@ namespaces (`rwz::detail::archive_io`, and so on) are not public API.
 #include "rwzfs/archive/create.h"
 
 rwz::create_options create;
-create.compression = "zstd:level=12";   // default: "zstd:level=12"
+create.compression = "zstd:level=22";   // default: the dwarfs level-7 profile, "zstd:level=22"
 auto ok = rwz::create_archive("source/", "project.dwarfs", create);
 if (!ok) { /* create_error: source_missing, tool_not_found, tool_failed, io, ... */ }
 ```
 
 - The archive is written to `project.dwarfs.tmp` and renamed on success. A failure leaves no
   partial archive.
-- The default compression is `zstd:level=12`. Other zstd options are unverified with the writer. If a build rejects a setting,
+- The default is the dwarfs level-7 profile with a 64 KiB block size. Other compression settings are unverified with the writer. If a build rejects a setting,
   `tool_failed` is returned and the reason is on the diagnostic stream.
 
 ## 2. Mount with an overlay

@@ -8,13 +8,18 @@ namespace rwz {
 
 // Compression used when the caller does not choose one. wlog and strat need a
 // zstd build that exposes those parameters (the dwarfs-bundled zstd does). The
-// default block compression: zstd at level 12, the setting the showcase and the
-// CI build use. Other zstd options (window log, strategy) are not verified with
-// this writer; set them only after testing.
-inline constexpr const char* kDefaultCompression = "zstd:level=12";
+// dwarfs level-7 profile (mkdwarfs -l 7): zstd:level=22 for data (the
+// per-category overrides below apply to pcmaudio and fits), zstd:level=16 for
+// the schema, zstd:level=22 for metadata, window size 12, window step 3, and
+// nilsimsa inode ordering. The one override is the block size: 64 KiB (level 7
+// uses 16 MiB, 2^24).
+inline constexpr const char* kDefaultCompression = "zstd:level=22";
+inline constexpr unsigned kDefaultBlockSizeBits  = 16;
 
 struct create_options {
-	std::string compression{kDefaultCompression};
+	std::string compression{kDefaultCompression};    // data blocks
+	unsigned block_size_bits{kDefaultBlockSizeBits}; // block size as a power
+	                                                 // of two (16 = 64 KiB)
 };
 
 enum class create_error {

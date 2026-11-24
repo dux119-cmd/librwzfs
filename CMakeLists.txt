@@ -312,6 +312,20 @@ else()
   set(RWZFS_DWARFS_DEFINE)
 endif()
 
+# The default archive profile compresses PCM audio with FLAC: dwarfs must have been built with FLAC.
+if(RWZFS_WITH_DWARFS)
+  set(_rwz_dwarfs_config "${DWARFS_PREFIX}/include/dwarfs/config.h")
+  if(NOT EXISTS "${_rwz_dwarfs_config}")
+    message(FATAL_ERROR "rwzfs: dwarfs's config.h is not under ${DWARFS_PREFIX}/include/dwarfs (is dwarfs installed there?)")
+  endif()
+  file(STRINGS "${_rwz_dwarfs_config}" _rwz_flac_line REGEX "DWARFS_HAVE_FLAC")
+  if(NOT _rwz_flac_line MATCHES "DWARFS_HAVE_FLAC 1")
+    message(FATAL_ERROR
+      "rwzfs: the dwarfs build has no FLAC (DWARFS_HAVE_FLAC is off). The archive profile compresses PCM audio with FLAC.\n"
+      "  Build dwarfs with FLAC: TRY_ENABLE_FLAC=ON and libflac available (the vcpkg port and scripts/deps both do this).")
+  endif()
+endif()
+
 add_library(rwzfs ${RWZFS_CORE_SOURCES} ${RWZFS_DWARFS_SOURCES})
 
 # Warnings for the library: reported, not errors (so a new compiler cannot break the build). Each flag is

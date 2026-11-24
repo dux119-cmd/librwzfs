@@ -6,6 +6,7 @@
 #if defined(RWZFS_HAVE_DWARFS)
 
 #include <dwarfs/block_compressor.h>
+#include <dwarfs/config.h>
 #include <dwarfs/detail/file_extent_info.h>
 #include <dwarfs/detail/file_segment_impl.h>
 #include <dwarfs/detail/file_view_impl.h>
@@ -22,10 +23,20 @@
 #include <dwarfs/os_access.h>
 #include <dwarfs/os_access_generic.h>
 #include <dwarfs/thread_pool.h>
+#ifndef DWARFS_HAVE_FLAC
+#error "rwzfs needs dwarfs built with FLAC: the archive profile compresses PCM audio with FLAC"
+#endif
+#include <dwarfs/block_compressor_parser.h>
+#include <dwarfs/integral_value_parser.h>
 #include <dwarfs/writer/categorizer.h>
+#include <dwarfs/writer/category_parser.h>
+#include <dwarfs/writer/contextual_option.h>
 #include <dwarfs/writer/entry_factory.h>
 #include <dwarfs/writer/filesystem_writer.h>
 #include <dwarfs/writer/filesystem_writer_options.h>
+#include <dwarfs/writer/fragment_order_options.h>
+#include <dwarfs/writer/fragment_order_parser.h>
+#include <dwarfs/writer/inode_options.h>
 #include <dwarfs/writer/scanner.h>
 #include <dwarfs/writer/scanner_options.h>
 #include <dwarfs/writer/segmenter.h>
@@ -42,8 +53,10 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/program_options.hpp>
@@ -514,15 +527,13 @@ std::expected<void, create_error> write_archive(const std::filesystem::path& roo
 		                                 std::chrono::milliseconds(100));
 		const auto workers = static_cast<std::size_t>(
 		        (std::max)(1u, std::thread::hardware_concurrency()));
-
-		// --categorize: the default categorizers mkdwarfs uses when
-		// given no list.
-		auto catmgr = std::make_shared<dw::writer::categorizer_manager>(lgr, root);
 		const auto fa = std::shared_ptr<const dw::file_access>(
 		        dw::create_file_access_generic());
+
+		// The categorizers: pcmaudio (PCM audio, compressed with FLAC),
+		// fits (image data), binary and incompressible.
+		auto catmgr = std::make_shared<dw::writer::categorizer_manager>(lgr, root);
 		dw::writer::categorizer_registry catreg;
-		// Every categorizer option takes its default: register the
-		// options, parse no arguments.
 		boost::program_options::options_description cat_opts("categorizers");
 		catreg.add_options(cat_opts);
 		boost::program_options::variables_map no_options;
@@ -532,42 +543,125 @@ std::expected<void, create_error> write_archive(const std::filesystem::path& roo
 		                                      .run(),
 		                              no_options);
 		boost::program_options::notify(no_options);
+		std::unordered_set<std::string_view> accepted_categories;
 		for (const char* name :
 		     {"fits", "pcmaudio", "binary", "incompressible"}) {
+			auto categorizer = catreg.create(lgr, name, no_options, fa);
+			for (auto cat : categorizer->categories()) {
+				accepted_categories.insert(cat);
+			}
 			catmgr->add(std::shared_ptr<dw::writer::categorizer>(
-			        catreg.create(lgr, name, no_options, fa)));
+			        std::move(categorizer)));
+		}
+		dw::writer::category_parser cp(catmgr, accepted_categories);
+		dw::writer::scanner_options sopts;
+
+		// Level 7 (mkdwarfs -l 7). Each option takes the level's
+		// default, then the level's per-category overrides, exactly as
+		// mkdwarfs applies them: one parse call per value, the
+		// contextual parser deciding the category.
+		dw::writer::segmenter_factory::config cfg;
+		cfg.block_size_bits = options.block_size_bits; // the one
+		                                               // override from
+		                                               // level 7's 2^24
+
+		// Inode ordering: nilsimsa, with path reversal for PCM audio
+		// and images.
+		{
+			dw::writer::contextual_option_parser cop(
+			        "--order",
+			        sopts.inode.fragment_order,
+			        cp,
+			        dw::writer::fragment_order_parser(fa));
+			for (const char* v : {"nilsimsa",
+			                      "pcmaudio/waveform::revpath",
+			                      "fits/image::revpath"}) {
+				cop.parse(v);
+			}
 		}
 
-		// Writer and segmenter settings. The per-category defaults are
-		// the ones mkdwarfs uses for its default level; without them
-		// the segmenter factory reads an empty optional.
-		dw::writer::segmenter_factory::config cfg;
+		// Segmenter settings: window size 12 (20 for PCM audio, 0 for
+		// images), window step 3, and the category defaults mkdwarfs
+		// uses for the rest of the segmenter.
 		const dw::writer::segmenter::config seg_defaults{};
-		cfg.blockhash_window_size.set_default(
-		        seg_defaults.blockhash_window_size);
-		cfg.window_increment_shift.set_default(
-		        seg_defaults.window_increment_shift);
 		cfg.max_active_blocks.set_default(seg_defaults.max_active_blocks);
 		cfg.bloom_filter_size.set_default(seg_defaults.bloom_filter_size);
+		cfg.window_increment_shift.set_default(3);
+		cfg.blockhash_window_size.set_default(12);
+		{
+			dw::integral_value_parser<unsigned> window_parser(0, 24);
+			dw::writer::contextual_option_parser cop("--window-size",
+			                                         cfg.blockhash_window_size,
+			                                         cp,
+			                                         window_parser);
+			for (const char* v :
+			     {"pcmaudio/waveform::20", "fits/image::0"}) {
+				cop.parse(v);
+			}
+		}
 
 		dw::thread_pool compress_pool(lgr, access, "compress", workers);
 		dw::writer::filesystem_writer_options fswopts;
+		fswopts.worst_case_block_size = UINT64_C(1) << cfg.block_size_bits;
 		dw::writer::filesystem_writer fsw(os, lgr, compress_pool, prog, fswopts);
-		// --compression: applies to every block (the categorizers pick
-		// no separate compressor).
-		fsw.add_default_compressor(dw::block_compressor(options.compression));
-		// Metadata sections use zstd. No history section: --no-history.
+
+		// Data compression: zstd:level=22 by default; PCM audio uses
+		// FLAC level 8, images zstd level 16, and incompressible data
+		// is stored (null).
+		{
+			dw::writer::categorized_option<dw::block_compressor> compression_opt;
+			dw::block_compressor_parser cparser;
+			dw::writer::contextual_option_parser cop("--compression",
+			                                         compression_opt,
+			                                         cp,
+			                                         cparser);
+			compression_opt.set_default(
+			        dw::block_compressor(options.compression));
+			for (const char* v : {"pcmaudio/waveform::flac:level=8",
+			                      "fits/image::zstd:level=16",
+			                      "incompressible::null"}) {
+				cop.parse(v);
+			}
+			const auto bc = compression_opt.get();
+			if (!bc.metadata_requirements().empty()) {
+				throw std::runtime_error(
+				        "the default compression cannot be used without a category");
+			}
+			fsw.add_default_compressor(bc);
+			compression_opt.visit_contextual(
+			        [catmgr, &fsw](auto cat,
+				               const dw::block_compressor& cbc) {
+				        catmgr->set_metadata_requirements(
+				                cat, cbc.metadata_requirements());
+				        fsw.add_category_compressor(cat, cbc);
+			        });
+		}
+
+		// Metadata: zstd:level=16 for the schema, zstd:level=22 for the
+		// metadata. No history section: --no-history.
 		fsw.add_section_compressor(dw::section_type::METADATA_V2_SCHEMA,
-		                           dw::block_compressor("zstd"));
+		                           dw::block_compressor("zstd:level=16"));
 		fsw.add_section_compressor(dw::section_type::METADATA_V2,
-		                           dw::block_compressor("zstd"));
+		                           dw::block_compressor("zstd:level=22"));
 
 		dw::writer::segmenter_factory sf(lgr, prog, catmgr, cfg);
 		dw::writer::entry_factory ef;
 		dw::thread_pool scanner_pool(lgr, access, "scanner", workers);
-		dw::writer::scanner_options sopts;
 		sopts.enable_history        = false; // --no-history
 		sopts.inode.categorizer_mgr = catmgr;
+		// The metadata options of dwarfs's default (mkdwarfs
+		// --pack-metadata=auto): packed names and packed symlinks,
+		// mtime_only (keep_all_times off) and inodes_have_nlink (the
+		// hardlink table is kept).
+		sopts.metadata.pack_names              = true;
+		sopts.metadata.pack_names_index        = false;
+		sopts.metadata.pack_symlinks           = true;
+		sopts.metadata.pack_symlinks_index     = false;
+		sopts.metadata.pack_chunk_table        = false;
+		sopts.metadata.pack_directories        = false;
+		sopts.metadata.pack_shared_files_table = false;
+		sopts.metadata.keep_all_times          = false;
+		sopts.metadata.no_hardlink_table       = false;
 		dw::writer::scanner scanner(lgr, scanner_pool, sf, ef, access, sopts);
 		scanner.scan(fsw, root, prog);
 	} catch (const std::exception& e) {

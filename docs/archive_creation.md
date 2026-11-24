@@ -11,7 +11,11 @@ writer's scanner over the tree, with the same settings as the `mkdwarfs` CLI fla
 - **Categorization** (`--categorize`): the default categorizers, `fits`, `pcmaudio`, `binary` and
   `incompressible`, with their default options.
 - **History** (`--no-history`): off. No history section is written.
-- **Compression**: `options.compression`, default `zstd:level=12`. Metadata sections use
+- **Metadata options** (dwarfs's default, `--pack-metadata=auto`): packed names and packed symlinks, `mtime_only`, and
+  `inodes_have_nlink`.
+- **Compression**: `options.compression`, default `zstd:level=22` (the dwarfs level-7 profile: schema zstd:level=16,
+  metadata zstd:level=22, window size 12, window step 3, nilsimsa ordering, and per-category PCM audio FLAC level 5 and
+  image zstd level 16). The block size is `options.block_size_bits`, default 16 (64 KiB); level 7 uses 2^24. Metadata sections use
   zstd.
 - **Segmenter defaults**: the per-category values `mkdwarfs` uses for its default level.
 

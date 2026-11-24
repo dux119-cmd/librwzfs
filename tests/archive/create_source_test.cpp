@@ -19,5 +19,8 @@ TEST(CreateArchive, MissingSourceIsReported)
 
 TEST(CreateArchive, DefaultCompressionMatchesCliSpec)
 {
-	EXPECT_STREQ(rwz::kDefaultCompression, "zstd:level=12");
+	EXPECT_STREQ(rwz::kDefaultCompression, "zstd:level=22"); // the dwarfs
+	                                                         // level-7 profile
+	EXPECT_EQ(rwz::kDefaultBlockSizeBits, 16u); // the one override: 64 KiB
+	                                            // blocks
 }

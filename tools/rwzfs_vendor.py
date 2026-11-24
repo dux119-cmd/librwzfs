@@ -45,7 +45,12 @@ POSIX_FUNCS = {
     "realpath", "opendir", "readdir", "closedir", "mkdir", "rmdir", "truncate", "access",
     "getcwd", "glob", "chdir", "chmod", "utimensat",
 }
-STDIO_FUNCS = {"fopen", "fread", "fwrite", "fseek", "fseeko", "ftello", "ftell", "fflush", "fclose", "remove", "rename"}
+STDIO_FUNCS = {"fopen", "fread", "fwrite", "fseek", "fseeko", "ftello", "ftell", "fflush", "fclose", "remove", "rename",
+               # MSVC and 64-bit spellings: rewritten to the library's wrappers (see STDIO_SYNONYMS)
+               "fopen_s", "fopen64", "_fseeki64", "fseeki64", "_ftelli64", "ftelli64", "_wfopen", "_wfopen_s"}
+# The vendor spelling -> the rwz::stdio function it becomes. Anything not listed keeps its name.
+STDIO_SYNONYMS = {"fopen64": "fopen", "_fseeki64": "fseeko", "fseeki64": "fseeko",
+                  "_ftelli64": "ftello", "ftelli64": "ftello", "_wfopen": "wfopen", "_wfopen_s": "wfopen_s"}
 WIN32_FUNCS = {
     "CreateFileW": "create_file", "ReadFile": "read_file", "SetFilePointer": "set_file_pointer",
     "FindFirstFileW": "find_first_file", "CreateDirectoryW": "create_directory",
@@ -678,7 +683,8 @@ def find_sites(rel: str, text: str, has: set[str], aliases: set[str]) -> tuple[l
                 silent += 1  # std::remove(first, last) is the container algorithm, not the C call
                 continue
             family = "win32" if name in WIN32_FUNCS else "stdio" if name in STDIO_FUNCS else "posix"
-            target = f"rwz::win32::{WIN32_FUNCS[name]}" if family == "win32" else f"rwz::{family}::{name}"
+            target = (f"rwz::win32::{WIN32_FUNCS[name]}" if family == "win32"
+                      else f"rwz::{family}::{STDIO_SYNONYMS.get(name, name)}")
             reason = None
             if not q and local and name in local:
                 where = ", ".join(local[name][:3]) + (" ..." if len(local[name]) > 3 else "")
@@ -919,18 +925,54 @@ def pick_key(question: str, allow_enter: bool = False) -> str:
 
 # ---- scanning ----------------------------------------------------------------
 
+INCLUDE_QUOTED_RE = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
+CXX_SOURCE_SUFFIXES = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx"}
+
+
+def cxx_compiled_headers(root: Path, libdir: str, excludes: set[str]) -> set[str]:
+    """Headers (project-relative) that C++ sources include, directly or through other headers. A header compiled as
+    C++ must get the C++ rewrites even if its text looks like C (a single-header library's functions, for example)."""
+    files = list(scan(root, excludes, libdir))
+    by_rel = {str(p.relative_to(root)): p for p in files}
+    headers = {rel: p for rel, p in by_rel.items() if p.suffix.lower() == ".h"}
+
+    def resolve(includer: Path, inc: str) -> str | None:
+        cand = (includer.parent / inc).resolve()
+        for rel, p in by_rel.items():
+            if p.resolve() == cand:
+                return rel
+        tail = inc.replace("\\", "/")
+        for rel in headers:
+            if rel == tail or rel.endswith("/" + tail):
+                return rel
+        return None
+
+    queue = [p for p in files if p.suffix.lower() in CXX_SOURCE_SUFFIXES]
+    seen: set[str] = set()
+    while queue:
+        p = queue.pop()
+        text = p.read_text(encoding="utf-8", errors="surrogateescape")
+        for inc in INCLUDE_QUOTED_RE.findall(text):
+            rel = resolve(p, inc)
+            if rel and rel not in seen and rel in headers:
+                seen.add(rel)
+                queue.append(headers[rel])
+    return seen
+
+
 def scan_project(root: Path, libdir: str, excludes: set[str], phase: str) -> tuple[list[Site], int]:
     """All sites in the project, in file order. phase is "replace" (calls and types) or "drop" (headers)."""
     inc_cache: dict = {}
     out: list[Site] = []
     silent_total = 0
+    cxx_hdrs = cxx_compiled_headers(root, libdir, excludes)
     for path in scan(root, excludes, libdir):
         rel = str(path.relative_to(root))
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
         if phase == "replace" and path.suffix == ".c":
             out.extend(sdl_sites(rel, text))  # C: only the SDL file-open rule (the rwz C++ names do not compile in C)
             continue
-        if path.suffix == ".c" or (path.suffix == ".h" and not CXX_HINT.search(text)):
+        if path.suffix == ".c" or (path.suffix == ".h" and not (CXX_HINT.search(text) or rel in cxx_hdrs)):
             continue
         if phase == "replace":
             has = system_includes_reachable(path, root, inc_cache)
@@ -964,6 +1006,7 @@ def header_commit(root: Path, libdir: str, excludes: set[str]) -> None:
     headers, and the SDL bridge header in files that open SDL files (C files included)."""
     needed: dict[str, set[str]] = {}
     sdl_files: set[str] = set()
+    cxx_hdrs = cxx_compiled_headers(root, libdir, excludes)
     for path in scan(root, excludes, libdir):
         rel = str(path.relative_to(root))
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
@@ -971,7 +1014,7 @@ def header_commit(root: Path, libdir: str, excludes: set[str]) -> None:
             sdl_files.add(rel)
         if path.suffix == ".c":
             continue  # C: the SDL bridge is the only rwzfs header a C file gets
-        if path.suffix == ".h" and not CXX_HINT.search(text):
+        if path.suffix == ".h" and not (CXX_HINT.search(text) or rel in cxx_hdrs):
             continue
         has = system_includes_reachable(path, root, {})
         sites, _ = find_sites(rel, text, has, set(FS_ALIAS_DECL.findall(text)))

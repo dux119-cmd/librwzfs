@@ -6,6 +6,7 @@ python3 tools/rwzfs_vendor.py \
     src/dos/cdrom_win32.cpp \
     tests/ \
     src/hardware/audio/ \
+    src/hardware/video/vga_xga.cpp \
     src/libs/http/ \
     src/misc/std_filesystem.h \
     src/cpu/ \
@@ -16,7 +17,7 @@ benchmarks Rayman 21 CDROM WAV track mounting:
 -S level duration size   order     hash  lookback,winsize,winstep,bloom
 15 22      20 ms  302 MB default
 16 22      21 ms  300 MB path
-16 22      21 ms  300 MB default
+16 22      21 ms  300 MB default      *** Winner ***
 18 12      26 ms  308 MB path      
 18 22      30 ms  296 MB path
 17 22      30 ms  298 MB path    xx128 24 24 8 10

@@ -216,3 +216,13 @@ any other code, so it needs the rwzfs headers and the rwzfs library. The tool do
   link, which is the only form CMake accepts for it.
 
 Run the tool (or `--refresh`) after adding a vendored project, so its target is picked up.
+
+## MSVC and 64-bit file calls
+
+These spellings are rewritten to the library's wrappers: `fopen_s` (kept, same return convention), `fopen64` to
+`fopen`, `_fseeki64` to `fseeko`, `_ftelli64` to `ftello`, and the wide-character `_wfopen` and `_wfopen_s` (on
+Windows; the path is narrowed to the ANSI form the wrappers take, so names outside the system code page cannot be
+represented).
+
+A header that C++ sources include is compiled as C++, so the tool rewrites it even when its text looks like C (for
+example a single-header library such as dr_mp3.h). The tool follows includes transitively from the C++ sources.

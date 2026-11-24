@@ -18,6 +18,18 @@ std::size_t fread(void* buf, std::size_t size, std::size_t count, std::FILE* str
 // An archive stream owns a private in-memory copy of the file. Close it with
 // fclose below.
 std::FILE* fopen(const char* path, const char* mode);
+
+// MSVC's fopen_s: 0 on success, otherwise an error number, and *file is set to
+// nullptr on failure. Available on every platform.
+int fopen_s(std::FILE** file, const char* path, const char* mode);
+
+#if defined(_WIN32)
+// The wide-character forms (_wfopen, _wfopen_s). The path is converted to the
+// narrow (ANSI) form the stdio wrappers take: names outside the system code
+// page cannot be represented, as with fopen itself.
+std::FILE* wfopen(const wchar_t* path, const wchar_t* mode);
+int wfopen_s(std::FILE** file, const wchar_t* path, const wchar_t* mode);
+#endif
 // STDIO-10 (new). Writes to a stream. Archive streams are read-only, so writes
 // to them fail.
 std::size_t fwrite(const void* buf, std::size_t size, std::size_t count,

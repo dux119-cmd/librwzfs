@@ -487,6 +487,48 @@ std::FILE* open_overlay_stream(const route& r, const char* mode)
 
 } // namespace
 
+int fopen_s(std::FILE** file, const char* path, const char* mode)
+{
+	if (file == nullptr) {
+		return EINVAL;
+	}
+	*file = rwz::stdio::fopen(path, mode);
+	if (*file != nullptr) {
+		return 0;
+	}
+	const int err = errno != 0 ? errno : EIO;
+	return err;
+}
+
+#if defined(_WIN32)
+namespace {
+
+std::string narrow_of(const wchar_t* text)
+{
+	if (text == nullptr) {
+		return {};
+	}
+	const std::filesystem::path p(text);
+	return p.string();
+}
+
+} // namespace
+
+std::FILE* wfopen(const wchar_t* path, const wchar_t* mode)
+{
+	return rwz::stdio::fopen(narrow_of(path).c_str(), narrow_of(mode).c_str());
+}
+
+int wfopen_s(std::FILE** file, const wchar_t* path, const wchar_t* mode)
+{
+	if (file == nullptr) {
+		return EINVAL;
+	}
+	*file = wfopen(path, mode);
+	return *file != nullptr ? 0 : (errno != 0 ? errno : EIO);
+}
+#endif
+
 std::FILE* fopen(const char* path, const char* mode)
 {
 	const auto p = resolved(path);

@@ -10,7 +10,25 @@ python3 tools/rwzfs_vendor.py \
     src/libs/http/ \
     src/misc/std_filesystem.h \
     src/cpu/ \
-    src/hardware/video/reelmagic/tools/
+    src/hardware/video/reelmagic/tools/ \
+    src/libs/enet/ \
+    src/misc/logger.cpp \
+    src/misc/private/logger.h \
+    src/libs/riffcpp/ \
+    src/libs/simpleini/ \
+    src/hardware/video/vga_xga.cpp \
+    src/libs/stb_truetype/ \
+    src/libs/loguru/ \
+    src/libs/json/ \
+    src/libs/imgui/ \
+    src/midi/fluidsynth.cpp \
+    src/midi/mt32_lasynth_model.cpp \
+    src/midi/private/win32.h \
+    src/midi/soundcanvas.cpp \
+    src/hardware/video/reelmagic/tools \
+    src/capture/ \
+    src/audio/opl_capture.cpp \
+    src/debugger/
 
 benchmarks Rayman 21 CDROM WAV track mounting:
 

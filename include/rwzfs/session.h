@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -78,9 +79,14 @@ public:
 private:
 	session(std::filesystem::path root, std::filesystem::path archive);
 
-	std::filesystem::path root_    = {};
-	std::filesystem::path archive_ = {};
-	bool mounted_                  = false;
+	std::filesystem::path root_                        = {};
+	std::filesystem::path archive_                     = {};
+	std::optional<std::filesystem::path> overlay_root_ = {}; // where this
+	                                                         // session's
+	                                                         // overlay lives
+	                                                         // (default if
+	                                                         // unset)
+	bool mounted_ = false;
 };
 
 enum class clear_error {
@@ -127,9 +133,12 @@ enum class extract_error {
 // are recreated as links to the same targets, so a link whose target is an
 // absolute archive path does not resolve on the host. Other file types are
 // skipped. The archive is mounted for the copy and unmounted afterwards.
+// on_progress, when given, is called about every two seconds while copying, and
+// once more when the copy ends.
 [[nodiscard]] std::expected<extract_stats, extract_error> extract_archive(
         const std::filesystem::path& archive, const std::filesystem::path& dest,
-        const session_options& options = {});
+        const session_options& options                               = {},
+        const std::function<void(const extract_stats&)>& on_progress = {});
 
 // Creates <name>.dwarfs from a game directory. `name` may be a bare name ("Game
 // (USA)"), a file name with the extension, or a path. A bare name is written to

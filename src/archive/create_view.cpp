@@ -512,19 +512,45 @@ std::expected<void, create_error> write_archive(const std::filesystem::path& roo
 	if (!os) {
 		return std::unexpected(create_error::io);
 	}
+	const auto started = std::chrono::steady_clock::now();
 
 	try {
 		view_os_access access;
 		dw::null_logger silent;
 		std::optional<dw::stream_logger> diag;
-		if (log != nullptr) {
-			diag.emplace(*log, access);
+		std::ostream* dwarfs_log = log != nullptr ? log : options.log;
+		if (dwarfs_log != nullptr) {
+			diag.emplace(*dwarfs_log, access);
 		}
 		dw::logger& lgr = diag ? static_cast<dw::logger&>(*diag)
 		                       : static_cast<dw::logger&>(silent);
-		dw::writer::writer_progress prog([](dw::writer::writer_progress&,
-		                                    bool) {},
-		                                 std::chrono::milliseconds(100));
+		// Progress: the size of the archive file so far and the elapsed
+		// time, about every interval, and once more at the end. Only
+		// public information is used (the writer's counters are private
+		// to dwarfs). The writer calls this on its own thread.
+		dw::writer::writer_progress prog(
+		        [&options, &tmp, started](dw::writer::writer_progress&,
+			                          bool final) {
+			        // The writer's final call comes before the
+				// archive file is closed (its data may still be
+				// buffered), so it is not reported: the
+				// completion is reported after the rename,
+				// below.
+			        if (final || !options.on_progress) {
+				        return;
+			        }
+			        create_progress snapshot;
+			        std::error_code size_ec = {};
+			        const auto size = std::filesystem::file_size(tmp, size_ec);
+			        snapshot.bytes_written =
+			                size_ec ? 0
+					        : static_cast<std::uint64_t>(size);
+			        snapshot.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+			                std::chrono::steady_clock::now() - started);
+			        options.on_progress(snapshot);
+		        },
+		        std::chrono::duration_cast<std::chrono::microseconds>(
+		                options.progress_interval));
 		const auto workers = static_cast<std::size_t>(
 		        (std::max)(1u, std::thread::hardware_concurrency()));
 		const auto fa = std::shared_ptr<const dw::file_access>(
@@ -680,6 +706,18 @@ std::expected<void, create_error> write_archive(const std::filesystem::path& roo
 	std::filesystem::rename(tmp, output, ec);
 	if (ec) {
 		return fail(tmp, create_error::io);
+	}
+	if (options.on_progress) {
+		// The completion: the archive is closed and in place, so its
+		// size is final.
+		create_progress done;
+		std::error_code size_ec = {};
+		const auto size = std::filesystem::file_size(output, size_ec);
+		done.bytes_written = size_ec ? 0 : static_cast<std::uint64_t>(size);
+		done.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+		        std::chrono::steady_clock::now() - started);
+		done.final = true;
+		options.on_progress(done);
 	}
 	return {};
 }

@@ -39,7 +39,8 @@ TEST(ClearChanges, RemovesDataWhiteoutsAndOpaqueDirectories)
 	EXPECT_FALSE(fs::exists(overlay / "data" / "save.dat"));
 	EXPECT_FALSE(fs::exists(overlay / "whiteouts" / "old.bin"));
 	EXPECT_FALSE(fs::exists(overlay / "opaque" / "dir"));
-	EXPECT_FALSE(fs::exists(overlay / ".rwz.lock")); // released
+	EXPECT_FALSE(fs::exists(overlay)); // nothing left: the overlay directory
+	                                   // is removed with the changes
 }
 
 TEST(ClearChanges, RefusesWhileTheOverlayIsLocked)

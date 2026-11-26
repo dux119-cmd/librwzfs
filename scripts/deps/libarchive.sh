@@ -14,6 +14,22 @@ build_libarchive() {
     -DENABLE_PCRE2POSIX=OFF -DENABLE_LZMA=OFF -DENABLE_BZip2=OFF -DENABLE_LZ4=OFF \
     -DENABLE_ZSTD=OFF -DENABLE_NETTLE=OFF -DENABLE_OPENSSL=OFF -DENABLE_MBEDTLS=OFF \
     -DENABLE_CNG=OFF -DENABLE_ACL=OFF -DENABLE_XATTR=OFF -DENABLE_ZLIB=ON
+  add_zlib_to_libs "$DEPS_PREFIX/lib/pkgconfig/libarchive.pc"
+}
+
+# dwarfs links libarchive through pkg-config without --static, so only Libs: is used. libarchive's reader needs
+# zlib, which the .pc lists as a private requirement only: add the zlib library file to Libs: (absolute path, so it
+# is right on every platform: libz.a, or zlib.lib on Windows).
+add_zlib_to_libs() {
+  local pc=$1 zlib
+  [[ -f "$pc" ]] || return 0
+  zlib=$(ls "$DEPS_PREFIX"/lib/libz.a "$DEPS_PREFIX"/lib/zlib.lib "$DEPS_PREFIX"/lib/libzlib.a 2>/dev/null | head -n 1 || true)
+  if [[ -z "$zlib" ]]; then
+    echo "warning: no zlib library under $DEPS_PREFIX/lib; libarchive.pc not updated" >&2
+    return 0
+  fi
+  grep -qF -- "$zlib" "$pc" && return 0
+  sed -i.bak "s|^Libs:\(.*\)\$|Libs:\1 $zlib|" "$pc" && rm -f "$pc.bak"
 }
 
 dep_main libarchive build_libarchive

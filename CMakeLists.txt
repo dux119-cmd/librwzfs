@@ -479,7 +479,9 @@ if(RWZFS_BUILD_TESTS)
       tests/archive/create_view_test.cpp
       tests/archive/session_round_trip_test.cpp
       tests/archive/large_file_round_trip_test.cpp
-      tests/archive/extract_round_trip_test.cpp)
+      tests/archive/extract_round_trip_test.cpp
+      tests/archive/overlay_cleanup_test.cpp
+      tests/archive/progress_test.cpp)
   endif()
 
   add_executable(rwzfs_tests ${RWZFS_TEST_SOURCES})

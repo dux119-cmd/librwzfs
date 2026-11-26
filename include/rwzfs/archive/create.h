@@ -1,7 +1,12 @@
 #pragma once
 
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
+#include <iosfwd>
 #include <string>
 
 namespace rwz {
@@ -16,10 +21,28 @@ namespace rwz {
 inline constexpr const char* kDefaultCompression = "zstd:level=22";
 inline constexpr unsigned kDefaultBlockSizeBits  = 16;
 
+// A snapshot of an archive being written, passed to create_options::on_progress.
+// Only public information: the writer's internal counters are not visible to
+// callers, so progress is the archive file's size so far.
+struct create_progress {
+	std::uint64_t bytes_written = 0;      // size of the archive file being
+	                                      // written so far
+	std::chrono::milliseconds elapsed{0}; // time since the write began
+	bool final = false; // true for the last call, after the writer has
+	                    // finished
+};
+
 struct create_options {
 	std::string compression{kDefaultCompression};    // data blocks
 	unsigned block_size_bits{kDefaultBlockSizeBits}; // block size as a power
 	                                                 // of two (16 = 64 KiB)
+	// Messages from the archive writer (dwarfs's own log), one per line.
+	// Null: silent.
+	std::ostream* log = nullptr;
+	// Called about every progress_interval while writing, and once more
+	// when done (create_progress::final).
+	std::function<void(const create_progress&)> on_progress;
+	std::chrono::milliseconds progress_interval{2000};
 };
 
 enum class create_error {

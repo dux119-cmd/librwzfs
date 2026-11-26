@@ -453,6 +453,8 @@ if(RWZFS_BUILD_TESTS)
     tests/io/stdio_api_test.cpp
     tests/io/stdio_large_file_test.cpp
     tests/archive/session_api_test.cpp
+    tests/archive/clear_changes_test.cpp
+    tests/archive/extract_test.cpp
     tests/io/stdio_archive_test.cpp
     tests/io/stdio_lazy_test.cpp
     tests/io/stdio_callbacks_test.cpp
@@ -476,7 +478,8 @@ if(RWZFS_BUILD_TESTS)
       tests/archive/create_revise_test.cpp
       tests/archive/create_view_test.cpp
       tests/archive/session_round_trip_test.cpp
-      tests/archive/large_file_round_trip_test.cpp)
+      tests/archive/large_file_round_trip_test.cpp
+      tests/archive/extract_round_trip_test.cpp)
   endif()
 
   add_executable(rwzfs_tests ${RWZFS_TEST_SOURCES})

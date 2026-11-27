@@ -44,7 +44,10 @@ bool is_within(const fs::path& target, const fs::path& mountpoint)
 
 bool is_valid_mountpoint(const fs::path& p)
 {
-	return p.is_absolute() && is_within(p.lexically_normal(), archive_root());
+	// Any absolute location, except a filesystem root: an archive mounts at
+	// its own path (c.dwarfs at /a/b/c).
+	const auto normal = p.lexically_normal();
+	return p.is_absolute() && normal.has_relative_path();
 }
 
 bool add(const fs::path& mountpoint,
@@ -57,6 +60,12 @@ bool add(const fs::path& mountpoint,
 	const auto normalized = mountpoint.lexically_normal();
 	{
 		const std::scoped_lock lock(table_mutex());
+		const bool taken = std::ranges::any_of(table(), [&](const mount_entry& m) {
+			return m.mountpoint == normalized;
+		});
+		if (taken) {
+			return false;
+		}
 		table().push_back({normalized,
 		                   std::move(backend),
 		                   std::move(overlay),
@@ -160,7 +169,12 @@ std::optional<route> find(const fs::path& p)
 	if (rel == ".") {
 		rel.clear();
 	}
-	return route{best->backend, std::move(rel), target, best->overlay, best->archive};
+	return route{best->backend,
+	             std::move(rel),
+	             target,
+	             best->overlay,
+	             best->archive,
+	             best->mountpoint};
 }
 
 } // namespace rwz::fs::mounts

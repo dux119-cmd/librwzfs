@@ -97,7 +97,7 @@ jobs:
           VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}/vcpkg-triplets
           VCPKG_OVERLAY_PORTS: ${{ github.workspace }}/vcpkg-ports
           VCPKG_DEFAULT_TRIPLET: ${{ matrix.triplet }}
-        run: cmake -S . -B build -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed"
+        run: cmake -S . -B build -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/vcpkg_installed" -DRWZFS_BUILD_TESTS=ON -DRWZFS_BUILD_EXAMPLES=ON
 
       # Windows: static CRT and static libraries, matching rwzfs's MultiThreaded runtime. CMake wants forward
       # slashes; the workspace path from the shell has backslashes on Windows, so it is converted.
@@ -109,6 +109,7 @@ jobs:
         run: |
           ws=$(cygpath -m "$PWD")
           cmake -S . -B build -DRWZFS_WITH_DWARFS=ON \
+            -DRWZFS_BUILD_TESTS=ON -DRWZFS_BUILD_EXAMPLES=ON \
             -DVCPKG_INSTALLED_DIR="$ws/vcpkg_installed" \
             -DVCPKG_OVERLAY_TRIPLETS="$ws/vcpkg-triplets" \
             -DVCPKG_OVERLAY_PORTS="$ws/vcpkg-ports"

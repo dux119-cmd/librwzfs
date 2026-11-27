@@ -101,7 +101,15 @@ std::expected<session, MountError> session::open(const std::filesystem::path& ar
 	if (options.overlay_root) {
 		mount.write_root = *options.overlay_root;
 	}
-	const auto root      = fs::archive_root();
+	// The archive mounts at its own path without the extension: c.dwarfs
+	// mounts at c (beside c.dwarfs). Host paths under that name are then
+	// the archive's, and the rest of the host is unchanged. An archive with
+	// no extension would mount over itself, so it is refused.
+	const auto absolute_archive = std::filesystem::absolute(archive).lexically_normal();
+	if (!absolute_archive.has_extension()) {
+		return std::unexpected(MountError::MountPointInvalid);
+	}
+	const auto root = absolute_archive.parent_path() / absolute_archive.stem();
 	const MountError err = mount_archive(archive, root, mount);
 	if (err != MountError::None) {
 		return std::unexpected(err);

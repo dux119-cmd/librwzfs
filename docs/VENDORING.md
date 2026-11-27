@@ -65,7 +65,7 @@ for instance) is still replaced, so check the dry run for names that look local.
 1. **Copies the library** (`include/`, `src/`, `CMakeLists.txt`, `LICENSE`) to `<root>/src/libs/rwzfs`
    (change with `--libdir`). An existing copy there is replaced.
 2. **Edits the top-level `CMakeLists.txt`**: appends a block that sets `RWZFS_WITH_DWARFS` (off unless
-   turns off the library's tests and examples, adds the library subdirectory, and
+   adds the library subdirectory (its tests and examples are off unless the library is built in Debug), and
    adds `target_link_libraries(<target> PRIVATE rwzfs)` for each `add_executable`/`add_library` in that
    file. The block is marked, and it is not added twice.
 3. **Rewrites sources.** Every `.cpp`, `.cc`, `.cxx`, `.hpp`, `.h` (C++ headers) and similar file under

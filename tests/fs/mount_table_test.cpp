@@ -27,10 +27,12 @@ TEST_F(MountTable, RejectsRelativeMountpoint)
 	EXPECT_FALSE(mounts::add("rwz/mount"));
 }
 
-TEST_F(MountTable, RejectsHostMountpointOutsideArchiveRoot)
+TEST_F(MountTable, AcceptsHostMountpointAnywhere)
 {
-	EXPECT_FALSE(mounts::add(HOST_ROOT "mnt/arch"));
-	EXPECT_FALSE(mounts::is_archive_path(HOST_ROOT "mnt/arch/x"));
+	// An archive mounts at its own path (c.dwarfs at c): any absolute
+	// location can be a mountpoint.
+	EXPECT_TRUE(mounts::add(HOST_ROOT "mnt/arch"));
+	EXPECT_TRUE(mounts::is_archive_path(HOST_ROOT "mnt/arch/x"));
 }
 
 TEST_F(MountTable, AcceptsArchiveRootItself)
@@ -49,8 +51,9 @@ TEST_F(MountTable, AcceptsMountUnderArchiveRoot)
 TEST_F(MountTable, IsValidMountpointIsPure)
 {
 	EXPECT_TRUE(mounts::is_valid_mountpoint(RWZ_ROOT "/x"));
-	EXPECT_FALSE(mounts::is_valid_mountpoint(HOST_ROOT "rwzx"));
-	EXPECT_FALSE(mounts::is_valid_mountpoint("rwz"));
+	EXPECT_TRUE(mounts::is_valid_mountpoint(HOST_ROOT "rwzx")); // any absolute
+	                                                            // location
+	EXPECT_FALSE(mounts::is_valid_mountpoint("rwz")); // relative: refused
 	EXPECT_FALSE(mounts::is_archive_path(RWZ_ROOT "/x")); // validation does
 	                                                      // not register
 }

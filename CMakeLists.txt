@@ -73,7 +73,16 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(RWZFS_BUILD_TESTS "Build rwzfs tests" ON)
+# Tests and examples are off by default, so a project that vendors rwzfs builds neither, whatever its build type.
+# Building rwzfs itself in Debug (single-config generators) turns them on. For multi-config generators, or to
+# override, pass -DRWZFS_BUILD_TESTS=ON / -DRWZFS_BUILD_EXAMPLES=ON.
+if(PROJECT_IS_TOP_LEVEL AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(_rwz_dev_default ON)
+else()
+  set(_rwz_dev_default OFF)
+endif()
+option(RWZFS_BUILD_TESTS "Build rwzfs tests (on in Debug builds)" ${_rwz_dev_default})
+option(RWZFS_BUILD_EXAMPLES "Build the rwzfs examples and tools (on in Debug builds)" ${_rwz_dev_default})
 # One flag for sanitizer testing: debug info, AddressSanitizer and UndefinedBehaviorSanitizer, tests on.
 # Use it with the sanitize preset, or: cmake -DRWZFS_SANITIZE=ON ...
 option(RWZFS_SANITIZE "Debug build with AddressSanitizer and UndefinedBehaviorSanitizer; enables the tests" OFF)
@@ -88,6 +97,7 @@ if(RWZFS_SANITIZE)
     message(FATAL_ERROR "RWZFS_SANITIZE needs GCC or Clang: AddressSanitizer and UBSan are not wired for MSVC.")
   endif()
   set(RWZFS_BUILD_TESTS ON CACHE BOOL "Build rwzfs tests" FORCE)
+  set(RWZFS_BUILD_EXAMPLES ON CACHE BOOL "Build the rwzfs examples and tools" FORCE)
   add_compile_options(-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all)
   add_link_options(-fsanitize=address,undefined)
   message(STATUS "rwzfs: sanitizer build (AddressSanitizer + UndefinedBehaviorSanitizer), tests on")
@@ -454,6 +464,7 @@ if(RWZFS_BUILD_TESTS)
     tests/io/stdio_large_file_test.cpp
     tests/archive/session_api_test.cpp
     tests/archive/clear_changes_test.cpp
+    tests/fs/mount_at_path_test.cpp
     tests/archive/extract_test.cpp
     tests/io/stdio_archive_test.cpp
     tests/io/stdio_lazy_test.cpp
@@ -507,7 +518,8 @@ if(RWZFS_BUILD_TESTS)
 endif()
 
 # Showcase program (docs/USAGE.md): host tree, mounted archive, writes, revision. Needs dwarfs.
-if(RWZFS_WITH_DWARFS AND RWZFS_BUILD_TESTS)
+if(RWZFS_WITH_DWARFS AND RWZFS_BUILD_EXAMPLES)
+  enable_testing()  # the showcase and tool checks are registered with CTest
   add_executable(rwzfs_example examples/usage.cpp)
   target_link_libraries(rwzfs_example PRIVATE rwzfs)
   add_test(NAME rwzfs_example COMMAND rwzfs_example ${CMAKE_BINARY_DIR}/example-work)
@@ -520,7 +532,7 @@ if(RWZFS_WITH_DWARFS AND RWZFS_BUILD_TESTS)
 endif()
 
 # Read benchmark (docs/BENCHMARK.md): host tree vs mounted archive. POSIX only.
-if(RWZFS_WITH_DWARFS AND NOT WIN32 AND RWZFS_BUILD_TESTS)
+if(RWZFS_WITH_DWARFS AND NOT WIN32 AND RWZFS_BUILD_EXAMPLES)
   add_executable(rwzfs_bench examples/bench_read.cpp)
   target_link_libraries(rwzfs_bench PRIVATE rwzfs)
 endif()

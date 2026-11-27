@@ -164,7 +164,8 @@ See `docs/USAGE.md` for a walk-through, `docs/archive_creation.md` for archive c
 
     rwz::unmount_archive("/rwz");
 
-A complete program is in `examples/usage.cpp`. Run it to see every operation on a host tree, a mounted
+A complete program is in `examples/usage.cpp`. Tests and examples are off by default and on in Debug builds;
+set `RWZFS_BUILD_TESTS` and `RWZFS_BUILD_EXAMPLES` to override. Run it to see every operation on a host tree, a mounted
 archive, and a revised archive, side by side.
 
 ## Documentation

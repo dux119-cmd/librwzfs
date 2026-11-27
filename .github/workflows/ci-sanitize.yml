@@ -23,7 +23,7 @@ jobs:
           sudo apt-get install -y g++-14 ninja-build cmake
 
       - name: Configure (sanitizer)
-        run: cmake -S . -B build-sanitize -DRWZFS_SANITIZE=ON -DRWZFS_WITH_DWARFS=OFF -DCMAKE_CXX_COMPILER=g++-14
+        run: cmake -S . -B build-sanitize -DRWZFS_SANITIZE=ON -DRWZFS_WITH_DWARFS=OFF -DCMAKE_CXX_COMPILER=g++-14 -DRWZFS_BUILD_TESTS=ON -DRWZFS_BUILD_EXAMPLES=ON
 
       - name: Build (sanitizer)
         run: cmake --build build-sanitize --parallel

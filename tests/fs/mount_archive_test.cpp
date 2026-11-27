@@ -49,7 +49,9 @@ TEST_F(MountArchive, InvalidMountpointIsReportedBeforeOpening)
 	TempDir dir;
 	const auto archive = dir.path() / "garbage.dwarfs";
 	std::ofstream(archive) << "not a dwarfs image";
-	EXPECT_EQ(rwz::mount_archive(archive, HOST_ROOT "mnt/outside", options()),
+	// Any absolute path other than the filesystem root is a valid
+	// mountpoint now: the root itself is not.
+	EXPECT_EQ(rwz::mount_archive(archive, HOST_ROOT "", options()),
 	          rwz::MountError::MountPointInvalid);
 }
 

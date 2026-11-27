@@ -407,8 +407,6 @@ def render_block(libdir: str, with_dwarfs: bool, links: list[str], deps: str, sd
     lines = [
         BLOCK_BEGIN,
         f'set(RWZFS_WITH_DWARFS {dwarfs} CACHE BOOL "Build the dwarfs-backed archive reader" FORCE)',
-        'set(RWZFS_BUILD_TESTS OFF CACHE BOOL "" FORCE)',
-        'set(RWZFS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)',
         f'set(RWZFS_DEPS "{deps}" CACHE STRING "Dependencies for dwarfs: vcpkg, scripts or system")',
     ]
     if deps == "vcpkg" and with_dwarfs:

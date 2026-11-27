@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S . -B build -DRWZFS_WITH_DWARFS=OFF -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DRWZFS_WITH_DWARFS=OFF -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release -DRWZFS_BUILD_TESTS=ON -DRWZFS_BUILD_EXAMPLES=ON
 
       - name: Build
         run: cmake --build build --config Release --parallel

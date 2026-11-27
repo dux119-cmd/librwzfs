@@ -39,11 +39,13 @@ std::optional<std::string> archive_link_target(const std::vector<std::string>& c
 
 // Walks an absolute path one component at a time, so a symlink in the middle of
 // the path is followed before the next component (as the OS does, so "link/.."
-// is correct).
+// is correct). The mount that owns each position decides how it is walked: inside
+// a mount, symlinks are followed in the archive, and ".." climbs out of the
+// mount's root to its real parent, which may be the host or another mount. Host
+// paths are passed on raw, so the OS resolves their symlinks.
 stdfs::path resolve_components(const stdfs::path& input, std::error_code& ec,
                                bool follow_final)
 {
-	const auto root = detail::components(archive_root().generic_string());
 	std::deque<std::string> pending;
 	for (auto& c : detail::components(input.generic_string())) {
 		pending.push_back(c);
@@ -58,32 +60,65 @@ stdfs::path resolve_components(const stdfs::path& input, std::error_code& ec,
 			continue;
 		}
 
+		const auto here = mounts::find(detail::absolute_from(out, 0));
+		const auto root = here ? detail::components(
+		                                 here->mountpoint.generic_string())
+		                       : std::vector<std::string>{};
+
 		if (token == "..") {
-			if (!detail::has_prefix(out, root)) {
-				// Host path: pass ".." to the OS raw so host
-				// symlinks are followed.
-				out.push_back(token);
-				out.insert(out.end(), pending.begin(), pending.end());
-				ec.clear();
-				return detail::absolute_from(out, 0);
-			}
-			if (out.size() > root.size()) {
-				out.pop_back();
+			if (here && out.size() > root.size()) {
+				out.pop_back(); // inside the mount: a normal climb
 				continue;
 			}
-			// Climbs above the archive root: the rest is a host
+			if (here) {
+				// At the mount's root: climb out of the mount.
+				// The parent may be another mount, which is
+				// walked from there.
+				out.pop_back();
+				if (mounts::find(detail::absolute_from(out, 0))) {
+					continue;
+				}
+				out.insert(out.end(), pending.begin(), pending.end());
+				ec.clear();
+				return detail::absolute_from(out, 0); // the host
+				                                      // path, raw
+			}
+			// On the host: a ".." can lead back into a mount (host
+			// "/a/b/x/../c/file"). If the normalized path is in
+			// one, walk that instead; otherwise the rest is a host
 			// path, passed raw.
+			std::vector<std::string> full = out;
+			full.push_back(token);
+			full.insert(full.end(), pending.begin(), pending.end());
+			const auto lexical = walk_lexically(
+			        detail::absolute_from(full, 0));
+			if (mounts::find(lexical)) {
+				out.clear();
+				pending.clear();
+				for (auto& c :
+				     detail::components(lexical.generic_string())) {
+					pending.push_back(c);
+				}
+				continue;
+			}
+			out.push_back(token);
+			out.insert(out.end(), pending.begin(), pending.end());
 			ec.clear();
-			const std::vector<std::string> rest(pending.begin(),
-			                                    pending.end());
-			return detail::host_absolute(root, rest, 0);
+			return detail::absolute_from(out, 0);
 		}
 
 		auto candidate = out;
 		candidate.push_back(token);
 		const bool is_final = pending.empty();
-		const bool inside_archive = detail::has_prefix(candidate, root) &&
-		                            candidate.size() > root.size();
+		bool inside_archive = false;
+		if (const auto owner = mounts::find(
+		            detail::absolute_from(candidate, 0));
+		    owner && owner->backend) {
+			const auto mp = detail::components(
+			        owner->mountpoint.generic_string());
+			inside_archive = detail::has_prefix(candidate, mp) &&
+			                 candidate.size() > mp.size();
+		}
 		if (!inside_archive || (is_final && !follow_final)) {
 			out.push_back(token);
 			continue;

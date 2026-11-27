@@ -52,3 +52,19 @@ Archive paths use one fixed absolute prefix: `/rwz` on POSIX, `C:/RWZ` on Window
 ## Path resolution vs. normalization
 - `normalize_archive_path` (PATH-15) normalizes archive-relative text and rejects relative escapes. Use it for archive-relative text only.
 - `walk_lexically` resolves paths for the wrappers. Inside the archive, `..` is lexical. Once a path leaves the archive, the rest is host-owned and host symlinks are followed.
+
+## Mount points: the archive's own path
+
+A session mounts an archive at its own path, without the extension: `/a/b/c.dwarfs` mounts at `/a/b/c`. The archive's
+contents are then the directory `c`, and they shadow any host directory of that name. Everything outside `c` is the
+host, unchanged.
+
+- Relative paths resolve from the working directory, which sits at the mount root once the archive is mounted.
+  `../log.txt` from `/a/b/c` is the host file `/a/b/log.txt`.
+- A `..` that climbs out of the mount continues from the real parent, which may be the host or another mount. A `..`
+  from the host that re-enters a mount (`/a/b/x/../c/file`) resolves into the archive.
+- Symbolic links inside the archive are followed within the archive, as before.
+- An archive without an extension is refused (it would mount over itself), and a mount at the filesystem root is
+  refused.
+
+The archive root `/rwz` (`C:/RWZ` on Windows) still works as a mount point for code that uses it directly.

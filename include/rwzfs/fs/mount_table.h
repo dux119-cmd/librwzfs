@@ -19,9 +19,12 @@ struct route {
 	std::filesystem::path overlay;  // overlay directory for writes (may be
 	                                // empty)
 	std::filesystem::path archive;  // archive file path (may be empty)
+	std::filesystem::path mountpoint; // the mount this route belongs to
+	                                  // (absolute, normalized)
 };
 
-// True if p is absolute and at or under archive_root(). Pure.
+// True if p is an absolute path that is not a filesystem root (any location may
+// be a mountpoint). Pure.
 [[nodiscard]] bool is_valid_mountpoint(const std::filesystem::path& p);
 
 // Registers a mountpoint. Returns false unless is_valid_mountpoint(p).

@@ -69,7 +69,7 @@ jobs:
 
       - name: Configure rwzfs (RWZFS_DEPS=scripts)
         shell: bash
-        run: cmake -S . -B build -DRWZFS_DEPS=scripts -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DRWZFS_DEPS=scripts -DRWZFS_USE_CCACHE=OFF -DCMAKE_BUILD_TYPE=Release -DRWZFS_BUILD_TESTS=ON -DRWZFS_BUILD_EXAMPLES=ON
 
       - name: Build
         shell: bash

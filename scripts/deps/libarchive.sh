@@ -23,7 +23,7 @@ build_libarchive() {
 add_zlib_to_libs() {
   local pc=$1 zlib
   [[ -f "$pc" ]] || return 0
-  zlib=$(ls "$DEPS_PREFIX"/lib/libz.a "$DEPS_PREFIX"/lib/zlib.lib "$DEPS_PREFIX"/lib/libzlib.a 2>/dev/null | head -n 1 || true)
+  zlib=$(zlib_library_file)
   if [[ -z "$zlib" ]]; then
     echo "warning: no zlib library under $DEPS_PREFIX/lib; libarchive.pc not updated" >&2
     return 0

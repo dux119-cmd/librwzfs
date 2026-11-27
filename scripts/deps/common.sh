@@ -30,6 +30,12 @@ IS_DARWIN=0
 [[ "$(uname -s)" == Darwin ]] && IS_DARWIN=1
 
 # Windows (Git Bash or MSYS): CMake needs mixed Windows paths.
+# The path of the zlib library this build installed (static, from build-deps/), or nothing. Static zlib is libz.a
+# (Unix) or zlibstatic.lib / zlib.lib (Windows, depending on the zlib build).
+zlib_library_file() {
+  ls "$DEPS_PREFIX"/lib/libz.a "$DEPS_PREFIX"/lib/zlibstatic.lib "$DEPS_PREFIX"/lib/zlib.lib 2>/dev/null | head -n 1 || true
+}
+
 to_native() {
   # An empty path stays empty (cygpath rejects it), e.g. for an optional prefix that is not set.
   [[ -z "$1" ]] && return 0

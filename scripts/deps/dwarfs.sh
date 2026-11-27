@@ -17,10 +17,11 @@ build_dwarfs() {
   local opt_flags="-Os -DNDEBUG -ffunction-sections -fdata-sections"
   local msvc_args=()
   if [[ $IS_WINDOWS == 1 ]]; then
-    # FLAC__NO_DLL: FLAC is linked statically. Passing CMAKE_CXX_FLAGS replaces CMake's MSVC defaults
-    # (which include /EHsc), so -EHsc is set here explicitly.
-    msvc_args=(${MSVC_RUNTIME[@]+"${MSVC_RUNTIME[@]}"} -DCMAKE_C_FLAGS=-DFLAC__NO_DLL
-               -DCMAKE_CXX_FLAGS="-EHsc -DFLAC__NO_DLL")
+    # FLAC__NO_DLL: FLAC is linked statically. LIBARCHIVE_STATIC: libarchive is a static library, so its symbols are
+    # not dllimport (without this, the extractor's references to archive_* are unresolved at link time). Passing
+    # CMAKE_CXX_FLAGS replaces CMake's MSVC defaults (which include /EHsc), so -EHsc is set here explicitly.
+    msvc_args=(${MSVC_RUNTIME[@]+"${MSVC_RUNTIME[@]}"} -DCMAKE_C_FLAGS="-DFLAC__NO_DLL -DLIBARCHIVE_STATIC"
+               -DCMAKE_CXX_FLAGS="-EHsc -DFLAC__NO_DLL -DLIBARCHIVE_STATIC")
     opt_flags=""  # MSVC: MinSizeRel selects size optimization; no GCC flags
   fi
   # dwarfs keeps its own flags (no hidden visibility), as it always has.
@@ -41,8 +42,18 @@ build_dwarfs() {
     prefix_path="$DEPS_PREFIX;$DEPS_EXTERNAL_PREFIX"
     suffix_args=()
   fi
+  # libarchive is static and needs zlib at link time. dwarfs links libarchive through pkg-config's Libs only, which
+  # does not carry zlib, so the zlib library file is added to every executable's link line (the tools need it).
+  local zlib_args=()
+  local zlib_lib
+  zlib_lib=$(zlib_library_file)
+  if [[ -n "$zlib_lib" && -z "$DEPS_EXTERNAL_PREFIX" ]]; then
+    zlib_args=(-DCMAKE_EXE_LINKER_FLAGS="$zlib_lib")
+  fi
+
   cmake -S "$src" -B "$build" ${GEN[@]+"${GEN[@]}"} \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+    ${zlib_args[@]+"${zlib_args[@]}"} \
     ${msvc_args[@]+"${msvc_args[@]}"} \
     -DCMAKE_BUILD_TYPE=MinSizeRel \
     -DCMAKE_PREFIX_PATH="$prefix_path" \

@@ -134,6 +134,19 @@ One variable, `RWZFS_DEPS`, picks where dwarfs and its libraries come from:
 
 If vcpkg is the choice but can't be found, configuration stops and names both alternatives.
 
+### Build options
+
+| Option | Default | Meaning |
+|---|---|---|
+| `RWZFS_DEPS` | `vcpkg` | Where dwarfs's dependencies come from: `vcpkg`, `scripts`, `system` |
+| `RWZFS_WITH_DWARFS` | `ON` | The dwarfs archive reader and creator |
+| `RWZFS_BUILD_TESTS` | on standalone, off vendored | The test suite |
+| `RWZFS_BUILD_EXAMPLES` | on standalone, off vendored | The examples and tools |
+| `RWZFS_SANITIZE` | `OFF` | AddressSanitizer and UBSan build, with tests |
+
+A standalone build defaults to `Debug`. A build that adds rwzfs as a subdirectory uses the parent's build type
+(`Release` if the parent has none), and builds neither tests nor examples.
+
 ## Building
 
 Requirements: CMake 3.21 or newer, a C++23 compiler (GCC 14 is what the test suite runs on; Clang and MSVC

@@ -36,7 +36,7 @@ benchmarks Rayman 21 CDROM WAV track mounting:
 15 22      20 ms  302 MB default
 16 22      21 ms  300 MB path
 16 22      21 ms  300 MB default      *** Winner ***
-18 12      26 ms  308 MB path      
+18 12      26 ms  308 MB path
 18 22      30 ms  296 MB path
 17 22      30 ms  298 MB path    xx128 24 24 8 10
 18 12      32 ms  308 MB revpath

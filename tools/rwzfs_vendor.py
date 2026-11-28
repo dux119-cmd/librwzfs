@@ -268,7 +268,7 @@ def system_includes_reachable(path: Path, root: Path, cache: dict[Path, set[str]
 # scripts/deps builds the managed dependencies (dwarfs and its stack) when the vendored library is configured.
 # scripts/deps builds the managed dependencies (and dwarfs, from script, against vcpkg). vcpkg-triplets are the
 # static triplets for vcpkg. The library's dependency list (vcpkg.json) is merged into the project, not copied.
-LIB_COPY_ITEMS = ["include", "src", "CMakeLists.txt", "LICENSE", "scripts/deps", "vcpkg-triplets", "vcpkg-ports", "integrations"]
+LIB_COPY_ITEMS = ["include", "src", "cmake", "CMakeLists.txt", "LICENSE", "scripts/deps", "vcpkg-triplets", "vcpkg-ports", "integrations"]
 
 
 def copy_library(lib_src: Path, dest: Path, dry: bool) -> None:
@@ -406,7 +406,10 @@ def render_block(libdir: str, with_dwarfs: bool, links: list[str], deps: str, sd
     dwarfs = "ON" if with_dwarfs else "OFF"
     lines = [
         BLOCK_BEGIN,
-        f'set(RWZFS_WITH_DWARFS {dwarfs} CACHE BOOL "Build the dwarfs-backed archive reader" FORCE)',
+        # A default only: a value given by the project, or on the command line, is kept.
+        "if(NOT DEFINED RWZFS_WITH_DWARFS)",
+        f"  set(RWZFS_WITH_DWARFS {dwarfs})",
+        "endif()",
         f'set(RWZFS_DEPS "{deps}" CACHE STRING "Dependencies for dwarfs: vcpkg, scripts or system")',
     ]
     if deps == "vcpkg" and with_dwarfs:
